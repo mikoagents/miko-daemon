@@ -7,6 +7,7 @@ import {
   HelloSchema,
   CreateOptionsSchema,
   ValidationSchema,
+  TimelineOptionsSchema,
   type ExecutionRequest,
   type AgentSnapshot,
 } from "@mikoagents/execution-protocol";
@@ -221,6 +222,13 @@ export class ExecutionService {
           );
           return null;
         },
+      );
+    }
+    if (request.operation === "timeline") {
+      const { agentId: _agentId, ...options } = request.input;
+      return this.options.execution.timeline(
+        binding.nativeAgentId,
+        TimelineOptionsSchema.parse(options),
       );
     }
     if (request.operation === "unwatch") {

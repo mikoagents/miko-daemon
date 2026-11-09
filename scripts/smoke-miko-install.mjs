@@ -16,6 +16,8 @@ try {
   await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", ...files]);
   const cli = join(root, "node_modules/.bin/miko");
   assert.match(await run(cli, ["--help"]), /Usage: miko/);
+  assert.match(await run(cli, ["agent", "logs", "--help"]), /--follow/);
+  assert.match(await run(cli, ["agent", "inspect", "--help"]), /--json/);
   assert.equal((await run(cli, ["--version"])).trim(), "0.8.0-miko.1");
   const manifest = JSON.parse(
     await readFile(join(root, "node_modules/@mikoagents/cli/package.json"), "utf8"),
@@ -45,6 +47,7 @@ try {
   assert.match(status, /running/);
   const providers = JSON.parse(await run(cli, ["provider", "ls", "--json"]));
   assert(providers.length > 0);
+  assert.deepEqual(JSON.parse(await run(cli, ["agent", "ls", "-ag", "--json"])), []);
   await assert.rejects(run(cli, ["backend", "ls", "--json"]), /unknown command/);
   await run(cli, ["daemon", "stop", "--json"]);
   started = false;

@@ -65,6 +65,32 @@ class TestExecution implements ExecutionRuntime {
       generatedAt: new Date().toISOString(),
     };
   }
+  readonly timelineIds: string[] = [];
+  async timeline(id: string) {
+    this.timelineIds.push(id);
+    return {
+      epoch: "epoch",
+      rows: [
+        {
+          seq: 1,
+          timestamp: "2026-11-09T10:00:00Z",
+          item: { type: "assistant_message", text: "Retained transcript" },
+        },
+      ],
+      hasOlder: false,
+      hasNewer: false,
+      reset: false,
+      window: { minSeq: 1, maxSeq: 1, nextSeq: 2 },
+      agent: {
+        nativeAgentId: id,
+        provider: "codex/custom",
+        providerSessionId: "provider-session",
+        cwd: "/repo",
+        status: "idle" as const,
+        model: "native-model",
+      },
+    };
+  }
   async refresh() {}
   async validate() {
     return { valid: true };
@@ -220,4 +246,35 @@ test("cancellation and cleanup persist stable execution keys and reject mismatch
   await socket.request("cleanup", input);
   await socket.request("cleanup", input);
   expect(f.native.controls).toEqual(["interrupt", "archive"]);
+});
+
+test("timeline reads survive reconnect and enforce public session ownership and execution permission", async () => {
+  const f = await fixture();
+  let { socket, service } = f.connect();
+  const agent = AgentSnapshotSchema.parse(
+    (await socket.request("create", { key: "session", options })).result,
+  );
+  socket.close();
+  ({ socket, service } = f.connect());
+  const result = await socket.request("timeline", {
+    agentId: agent.id,
+    direction: "after",
+    cursor: { epoch: "epoch", seq: 0 },
+    limit: 100,
+  });
+  expect(result.error).toBeUndefined();
+  expect(result.result).toMatchObject({
+    rows: [{ item: { text: "Retained transcript" } }],
+    agent: { nativeAgentId: "native-agent", providerSessionId: "provider-session" },
+  });
+  expect(f.native.timelineIds).toEqual(["native-agent"]);
+  const other = f.connect("other-hub");
+  expect((await other.socket.request("timeline", { agentId: agent.id })).error?.code).toBe(
+    "session_not_found",
+  );
+  service.updatePermissions([]);
+  expect((await socket.request("timeline", { agentId: agent.id })).error?.code).toBe(
+    "execution_not_allowed",
+  );
+  expect(f.native.timelineIds).toHaveLength(1);
 });

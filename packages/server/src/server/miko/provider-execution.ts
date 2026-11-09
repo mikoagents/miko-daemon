@@ -7,6 +7,9 @@ import {
   type CreateOptions,
   type HubProviderSnapshot,
   ValidationSchema,
+  TimelinePageSchema,
+  type TimelineOptions,
+  type TimelinePage,
 } from "@mikoagents/execution-protocol";
 import type { AgentManager } from "../agent/agent-manager.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../worktree-session.js";
@@ -15,7 +18,7 @@ import type { ProviderSnapshotManager } from "../agent/provider-snapshot-manager
 import type { BoundCreateAgentCommand } from "../agent/create-agent/create.js";
 import type { WorkspaceRegistry } from "../workspace-registry.js";
 import { AgentRequests } from "../agent/requests/index.js";
-import { ensureUnarchivedAgentLoaded } from "../agent/agent-loading.js";
+import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "../agent/agent-loading.js";
 import { sendPromptToAgent } from "../agent/agent-prompt.js";
 import { serializeAgentSnapshot, serializeAgentStreamEvent } from "../messages.js";
 import { buildStoredAgentPayload } from "../agent/agent-projections.js";
@@ -35,6 +38,7 @@ export type ProviderExecutionEvent =
 export interface ExecutionRuntime {
   create(key: string, options: CreateOptions): Promise<AgentSnapshot>;
   get(agentId: string): Promise<AgentSnapshot>;
+  timeline(agentId: string, options: TimelineOptions): Promise<TimelinePage>;
   send(agentId: string, messageId: string, text: string): Promise<void>;
   restore(workspaceId: string): Promise<boolean>;
   control(agentId: string, workspaceId: string, action: "interrupt" | "archive"): Promise<void>;
@@ -196,6 +200,38 @@ export class ProviderExecution implements ExecutionRuntime {
       status: value.status,
       ...(record.archivedAt ? { archivedAt: record.archivedAt } : {}),
     };
+  }
+  async timeline(agentId: string, options: TimelineOptions): Promise<TimelinePage> {
+    const record = await this.requireOwned(agentId);
+    const generation = this.generation;
+    await ensureAgentLoaded(agentId, this.options);
+    this.requireAuthority(generation);
+    const result = this.options.agentManager.fetchTimeline(agentId, options);
+    const live = this.options.agentManager.getAgent(agentId);
+    const snapshot = live ? serializeAgentSnapshot(live) : null;
+    return TimelinePageSchema.parse(
+      JSON.parse(
+        JSON.stringify({
+          ...result,
+          agent: {
+            nativeAgentId: agentId,
+            provider: record.provider,
+            providerSessionId: record.persistence?.sessionId ?? null,
+            status: live ? serializeAgentSnapshot(live).status : record.lastStatus,
+            cwd: record.cwd,
+            model:
+              snapshot?.runtimeInfo?.model ??
+              snapshot?.model ??
+              record.runtimeInfo?.model ??
+              record.config?.model ??
+              null,
+            details:
+              snapshot ??
+              buildStoredAgentPayload(record, this.options.agentManager.getRegisteredProviderIds()),
+          },
+        }),
+      ),
+    );
   }
   async send(agentId: string, messageId: string, text: string) {
     await this.requireOwned(agentId);

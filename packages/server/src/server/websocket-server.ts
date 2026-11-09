@@ -22,6 +22,8 @@ import type { ProviderExecution } from "./miko/provider-execution.js";
 import { serializeAgentSnapshot, serializeAgentStreamEvent } from "./messages.js";
 import { buildStoredAgentPayload } from "./agent/agent-projections.js";
 import { ensureAgentLoaded } from "./agent/agent-loading.js";
+import { projectTimelineRows } from "./agent/timeline-projection.js";
+import { checkoutFromPersistedWorkspacePlacement } from "./workspace-registry-model.js";
 import { getPidLockInfo } from "./pid-lock.js";
 import { loadConfig } from "./config.js";
 import {
@@ -121,7 +123,9 @@ export class ExecutionWebSocketServer {
           send("agent_stream", {
             agentId: event.agentId,
             event: stream,
-            timestamp: new Date().toISOString(),
+            timestamp: event.timestamp ?? new Date().toISOString(),
+            seq: event.seq,
+            epoch: event.epoch,
           });
       }
     });
@@ -443,6 +447,41 @@ export class ExecutionWebSocketServer {
     }
   }
 
+  private async listAgents(msg: Extract<SessionInboundMessage, { type: "fetch_agents_request" }>) {
+    const { agentStorage } = this.options;
+    const records = await agentStorage.list();
+    const entries = [];
+    for (const record of records) {
+      const agent = await this.agentPayload(record.id);
+      if (!agent || (!msg.filter?.includeArchived && agent.archivedAt)) continue;
+      if (msg.filter?.statuses && !msg.filter.statuses.includes(agent.status)) continue;
+      if (
+        msg.filter?.thinkingOptionId !== undefined &&
+        agent.effectiveThinkingOptionId !== msg.filter.thinkingOptionId
+      )
+        continue;
+      if (
+        Object.entries(msg.filter?.labels ?? {}).some(([key, value]) => agent.labels[key] !== value)
+      )
+        continue;
+      const workspace = agent.workspaceId
+        ? await this.options.workspaceRegistry.get(agent.workspaceId)
+        : undefined;
+      if (!workspace) continue;
+      if (msg.scope === "active" && (agent.archivedAt || workspace.archivedAt)) continue;
+      entries.push({
+        agent,
+        project: {
+          projectKey: workspace.projectId,
+          projectName: workspace.displayName,
+          workspaceName: workspace.title,
+          checkout: checkoutFromPersistedWorkspacePlacement({ workspace }),
+        },
+      });
+    }
+    return entries;
+  }
+
   private async observationRequest(
     msg: SessionInboundMessage,
     context: NativeContext,
@@ -450,13 +489,14 @@ export class ExecutionWebSocketServer {
     const { agentManager, agentStorage, logger } = this.options;
     const { respond } = context;
     switch (msg.type) {
-      case "fetch_agents_request":
+      case "fetch_agents_request": {
         context.observe();
         respond("fetch_agents_response", {
-          entries: [],
+          entries: await this.listAgents(msg),
           pageInfo: { nextCursor: null, prevCursor: null, hasMore: false },
         });
         return true;
+      }
       case "session.events.set_subscription.request":
         respond("session.events.set_subscription.response", { events: msg.events });
         return true;
@@ -467,25 +507,25 @@ export class ExecutionWebSocketServer {
       case "fetch_agent_timeline_request": {
         await ensureAgentLoaded(msg.agentId, { agentManager, agentStorage, logger });
         const result = agentManager.fetchTimeline(msg.agentId, msg);
+        const entries = projectTimelineRows({
+          rows: result.rows,
+          mode: msg.projection ?? "projected",
+        });
         const first = result.rows[0],
           last = result.rows.at(-1);
         respond("fetch_agent_timeline_response", {
           ...result,
           agentId: msg.agentId,
           agent: await this.agentPayload(msg.agentId),
-          projection: "canonical",
+          projection: msg.projection ?? "projected",
           error: null,
           startCursor: first ? { epoch: result.epoch, seq: first.seq } : null,
           endCursor: last ? { epoch: result.epoch, seq: last.seq } : null,
-          entries: result.rows.map((row) => ({
-            item: row.item,
-            timestamp: row.timestamp,
-            seqStart: row.seq,
-            seqEnd: row.seq,
-            provider: agentManager.getAgent(msg.agentId)?.provider,
-            sourceSeqRanges: [{ startSeq: row.seq, endSeq: row.seq }],
-            collapsed: [],
-          })),
+          entries: entries.map((entry) =>
+            Object.assign({}, entry, {
+              provider: agentManager.getAgent(msg.agentId)?.provider,
+            }),
+          ),
         });
         return true;
       }
@@ -506,7 +546,13 @@ export class ExecutionWebSocketServer {
   private async agentPayload(id: string) {
     const live = this.options.agentManager.getAgent(id);
     if (live) return serializeAgentSnapshot(live);
-    const record = await this.options.agentStorage.get(id);
+    let record = await this.options.agentStorage.get(id);
+    if (!record) {
+      const matches = (await this.options.agentStorage.list()).filter((candidate) =>
+        candidate.id.startsWith(id),
+      );
+      record = matches.length === 1 ? (matches[0] ?? null) : null;
+    }
     return record
       ? buildStoredAgentPayload(record, this.options.agentManager.getRegisteredProviderIds())
       : null;

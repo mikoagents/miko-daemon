@@ -38,3 +38,29 @@ test("custom provider options and every supported worktree mode survive schema v
   expect(CreateOptionsSchema.parse(options)).toEqual(options);
   expect(CreateOptionsSchema.safeParse({ ...options, backend: "local" }).success).toBe(false);
 });
+
+test("timeline requests require bounded pages and opaque epoch cursors", () => {
+  const request = {
+    type: "miko.request",
+    version,
+    requestId: "request",
+    operation: "timeline",
+    input: {
+      agentId: "session",
+      limit: 200,
+      direction: "after",
+      cursor: { epoch: "opaque", seq: 4 },
+    },
+  };
+  expect(RequestSchema.safeParse(request).success).toBe(true);
+  for (const limit of [0, -1, 201])
+    expect(
+      RequestSchema.safeParse({ ...request, input: { ...request.input, limit } }).success,
+    ).toBe(false);
+  expect(
+    RequestSchema.safeParse({
+      ...request,
+      input: { ...request.input, cursor: { epoch: "opaque", seq: -1 } },
+    }).success,
+  ).toBe(false);
+});

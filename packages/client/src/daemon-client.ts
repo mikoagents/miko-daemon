@@ -1211,6 +1211,22 @@ export class DaemonClient {
     }, LIVENESS_HEARTBEAT_INTERVAL_MS);
   }
 
+  observeAgentTimeline(agentId: string) {
+    return this.subscriptions.observeTimeline(agentId);
+  }
+
+  async fetchAgents(
+    options: Omit<
+      Extract<SessionInboundMessage, { type: "fetch_agents_request" }>,
+      "type" | "requestId"
+    > = {},
+  ) {
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "fetch_agents_request", ...options },
+      responseType: "fetch_agents_response",
+    });
+  }
+
   async fetchAgent(
     agentId: string,
     options: { requestId?: string; timeout?: number } = {},

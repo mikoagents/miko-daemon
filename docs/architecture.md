@@ -14,19 +14,19 @@ The public service journals requests and binds each session to its enrolled Hub,
 provider and native reference. Provider adapters keep their native permissions and MCP behavior.
 
 Miko executes through its own provider/session manager. The local `/ws` endpoint
-provides only direct management, provider discovery and the execution RPC subset. Removed
+provides only direct management, provider discovery, agent inspection/listing, canonical/projected timeline reads and the execution RPC subset. Removed
 operations return an explicit unsupported error. Reload validates configuration and reports
 restart requirements; it does not partially reconfigure a running provider registry.
 
 ## Package boundary
 
-| Package              | Maintained purpose                                                           |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `cli`                | Daemon lifecycle, provider diagnostics, Hub enrollment and authorization     |
-| `server`             | Supervision, providers, durable sessions, recovery and execution adapters    |
-| `protocol`           | Inherited wire schemas and native provider/configuration types               |
-| `client`             | Direct native control, provider discovery, Hub management and timeline reads |
-| `execution-protocol` | Independent, versioned Hub execution contract                                |
+| Package              | Maintained purpose                                                             |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `cli`                | Daemon lifecycle, agent/provider diagnostics, Hub enrollment and authorization |
+| `server`             | Supervision, providers, durable sessions, recovery and execution adapters      |
+| `protocol`           | Inherited wire schemas and native provider/configuration types                 |
+| `client`             | Direct native control, provider discovery, Hub management and timeline reads   |
+| `execution-protocol` | Independent, versioned Hub execution contract                                  |
 
 Native schemas retain upstream wire vocabulary for local management and provider compatibility.
 Schema names do not enable their corresponding product services in Miko. The client SDK
@@ -44,3 +44,11 @@ provider's own concern; Miko does not host Paseo product plugins.
 
 The deleted products remain available in upstream Git history. Select upstream fixes by
 module; do not restore a removed product as a dependency of an execution fix.
+
+## Session diagnostics
+
+Public execution protocol 2.1.0 adds `timeline`: bounded canonical pages with epoch/sequence
+cursors, session metadata and original provider tool details. The operation resolves the same
+Hub-owned public binding as execution controls before reading the provider/session manager.
+Native `/ws` diagnostics retain Paseo request names and projected transcripts for the CLI.
+Hub owns its cached copy and presentation; Miko remains the session/transcript authority.

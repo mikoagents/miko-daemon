@@ -1,3 +1,4 @@
+import { createAgentCommand } from "./commands/agent/index.js";
 import { Command } from "commander";
 import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { createDaemonCommand } from "./commands/daemon/index.js";
@@ -18,6 +19,7 @@ export function createCli(): Command {
   addDaemonHostOption(program);
   program.addCommand(createDaemonCommand());
   program.addCommand(createProviderCommand());
+  program.addCommand(createAgentCommand());
   program.addCommand(createHubCommand());
   return program;
 }

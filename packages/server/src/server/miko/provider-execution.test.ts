@@ -81,6 +81,10 @@ test("headless runtime preserves keyed creation, exact prompts, native timeline 
             })
           )["agent"],
         ),
+      list: async () =>
+        z
+          .object({ entries: z.array(z.object({ agent: z.object({ id: z.string() }) })) })
+          .parse(await request("fetch_agents_request", { scope: "active" })).entries,
       get: async (id: string) =>
         snapshot.parse((await request("fetch_agent_request", { agentId: id }))["agent"]),
       send: async (id: string, messageId: string, text: string) => {
@@ -127,6 +131,9 @@ test("headless runtime preserves keyed creation, exact prompts, native timeline 
         (entry) => entry.item.type === "user_message" && entry.item.text === prompt,
       ),
     ).toBe(true);
+    const listed = await client.fetchAgents({ filter: { includeArchived: true } });
+    expect(listed.entries.some((entry) => entry.agent.id === first.id)).toBe(true);
+    expect((await client.fetchAgent(first.id.slice(0, 8)))?.agent.id).toBe(first.id);
     await client.close();
     client = undefined;
     await connection.archive(first.workspaceId);
@@ -140,6 +147,7 @@ test("headless runtime preserves keyed creation, exact prompts, native timeline 
     await daemon.start();
     connection = await connect();
     expect((await connection.create("stable")).id).toBe(first.id);
+    expect((await connection.list()).some((entry) => entry.agent.id === first.id)).toBe(true);
     await connection.send(first.id, "message-1", prompt);
     expect(prompts).toHaveLength(1);
   } finally {
