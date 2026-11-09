@@ -629,7 +629,7 @@ export class DaemonClient {
         this.config.transportFactory ??
         createWebSocketTransportFactory(this.config.webSocketFactory ?? defaultWebSocketFactory);
       if (this.config.e2ee?.enabled)
-        throw new Error("Relay E2EE is not included in Miko; use a direct ws/wss backend");
+        throw new Error("Relay E2EE is not included in Miko; use a direct ws/wss endpoint");
       const transportFactory = baseTransportFactory;
       const transportUrl = this.resolveTransportUrlForAttempt();
       const transport = transportFactory({

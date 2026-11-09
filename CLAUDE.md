@@ -9,7 +9,7 @@ Keep provider/session/storage/supervision modules at their upstream paths. Miko-
 execution logic belongs in `packages/server/src/server/miko`. Preserve native provider options
 and permissions, explicit MCP grants, durable receipts and session ownership. Never rewrite
 task prompts or auto-approve permissions. Removed products must stay out of dependency/build
-closures; native wire schema vocabulary is retained for existing Paseo interoperability.
+closures; native wire schema vocabulary is retained for local management and provider compatibility.
 
 - Never restart the live daemon on port 6767 or use its state for tests.
 - Build owning workspaces before diagnosing cross-package types (`npm run build:miko`).

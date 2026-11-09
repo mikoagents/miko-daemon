@@ -1,8 +1,8 @@
 # Agent lifecycle
 
 `AgentManager` remains the native owner of provider sessions, turns, permissions and event
-streams. `AgentStorage` persists native resume handles and lifecycle snapshots. Miko's local
-backend calls these modules directly and scopes every session to its enrolled Hub identity.
+streams. `AgentStorage` persists native resume handles and lifecycle snapshots. Miko's provider execution runtime
+calls these modules directly and scopes every session to its enrolled Hub identity.
 
 Creation and submission are separate keyed operations. Creation can be recovered by its
 preallocated agent ID; uncertain submissions are never automatically repeated. Restore uses

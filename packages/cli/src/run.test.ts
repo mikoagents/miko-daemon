@@ -7,7 +7,7 @@ test("defaults to help and exposes only execution operations", () => {
     createCli()
       .commands.map((command) => command.name())
       .sort(),
-  ).toEqual(["backend", "daemon", "hub", "provider"]);
+  ).toEqual(["daemon", "hub", "provider"]);
   expect(createCliParseArgv({ argv: ["daemon", "status"], cwd: "/tmp" })).toEqual([
     "node",
     "miko",

@@ -13,6 +13,6 @@ body:
     id: reproduce
     attributes:
       label: Steps to reproduce
-      description: Include Miko and Node versions, OS, provider/backend and sanitized diagnostics. Omit credentials, prompts and private paths.
+      description: Include Miko and Node versions, OS, provider and sanitized diagnostics. Omit credentials, prompts and private paths.
     validations:
       required: true

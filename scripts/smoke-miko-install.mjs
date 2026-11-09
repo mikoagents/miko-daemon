@@ -43,19 +43,13 @@ try {
   }
   const status = await run(cli, ["daemon", "status", "--json"]);
   assert.match(status, /running/);
-  const backends = JSON.parse(await run(cli, ["backend", "ls", "--json"]));
-  assert.deepEqual(backends, [{ id: "local", type: "local" }]);
-  const diagnostic = JSON.parse(await run(cli, ["backend", "diagnostic", "local", "--json"]));
-  assert(diagnostic.length > 0);
-  assert(
-    diagnostic.every(
-      (entry) => entry.backend === "local" && typeof entry.exactMcpPreapproval === "boolean",
-    ),
-  );
+  const providers = JSON.parse(await run(cli, ["provider", "ls", "--json"]));
+  assert(providers.length > 0);
+  await assert.rejects(run(cli, ["backend", "ls", "--json"]), /unknown command/);
   await run(cli, ["daemon", "stop", "--json"]);
   started = false;
   process.stdout.write(
-    "Clean install: branded CLI, isolated supervisor startup/status/shutdown and local backend passed.\n",
+    "Clean install: branded CLI, isolated supervisor startup/status/shutdown and provider discovery passed.\n",
   );
 } finally {
   if (started)

@@ -1,6 +1,6 @@
 # Miko daemon
 
-Miko executes Hub workflows locally or through an existing Paseo service. It derives its
+Miko executes Hub workflows through local providers. It derives its
 provider, session, storage and process supervision modules from [Paseo](https://github.com/getpaseo/paseo).
 The upstream history and Apache-2.0 license are retained.
 
@@ -32,14 +32,13 @@ State defaults to `~/.miko`, with `MIKO_HOME` overriding it. The default endpoin
 or explicit provider configuration; Miko never grants task authority during enrollment.
 Grant `hub.execute` separately when intended.
 
-The supported command groups are `daemon`, `provider`, `backend` and `hub`. Workflow
+The supported command groups are `daemon`, `provider` and `hub`. Workflow
 orchestration, prompts, outputs and completion belong to Hub. Miko includes all inherited
 provider adapters, custom ACP agents and provider profiles. It includes no mobile/desktop/web
 application, voice models, relay, plugin host, browser host, terminal UI, script hosting or resident scheduler.
 The OpenCode adapter's native bridge remains part of provider execution.
 
 - [Execution architecture and scope](docs/architecture.md)
-- [Local and existing Paseo backends](docs/miko-backends.md)
 - [Custom providers and profiles](docs/custom-providers.md)
 - [Upstream synchronization](docs/miko-upstream.md)
 - [Contributing and verification](CONTRIBUTING.md)

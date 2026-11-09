@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
-import { createBackendCommand } from "./commands/backend.js";
 import { createDaemonCommand } from "./commands/daemon/index.js";
 import { createProviderCommand } from "./commands/provider/index.js";
 import { createHubCommand } from "./commands/hub/index.js";
@@ -19,7 +18,6 @@ export function createCli(): Command {
   addDaemonHostOption(program);
   program.addCommand(createDaemonCommand());
   program.addCommand(createProviderCommand());
-  program.addCommand(createBackendCommand());
   program.addCommand(createHubCommand());
   return program;
 }

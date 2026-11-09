@@ -18,7 +18,7 @@ import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.
 import type { WorkspaceRegistry } from "./workspace-registry.js";
 import type { WorkspaceRecoveryService } from "./session/workspace-recovery/workspace-recovery-service.js";
 import type { HubRelationshipManagement } from "./hub/relationship-controller.js";
-import type { LocalBackend } from "./miko/local-backend.js";
+import type { ProviderExecution } from "./miko/provider-execution.js";
 import { serializeAgentSnapshot, serializeAgentStreamEvent } from "./messages.js";
 import { buildStoredAgentPayload } from "./agent/agent-projections.js";
 import { ensureAgentLoaded } from "./agent/agent-loading.js";
@@ -43,7 +43,7 @@ export interface WebSocketLike {
 }
 interface NativeContext {
   clientId: string;
-  backend: LocalBackend;
+  execution: ProviderExecution;
   respond(type: string, payload: Record<string, unknown>): void;
   observe(): void;
   setTimelineIds(ids: string[]): void;
@@ -59,7 +59,7 @@ interface Options {
   workspaceRegistry: WorkspaceRegistry;
   recovery: WorkspaceRecoveryService;
   hubRelationships: HubRelationshipManagement;
-  localBackend(ownerId: string): LocalBackend;
+  providerExecution(ownerId: string): ProviderExecution;
   logger: Logger;
 }
 
@@ -103,7 +103,7 @@ export class ExecutionWebSocketServer {
   private attach(socket: WebSocket) {
     const { agentManager, logger } = this.options;
     let clientId: string | undefined;
-    let backend: LocalBackend;
+    let execution: ProviderExecution;
     let observing = false;
     let timelineIds = new Set<string>();
     const send = (type: string, payload: unknown) => {
@@ -141,7 +141,7 @@ export class ExecutionWebSocketServer {
           if (clientId) throw new Error("duplicate hello");
           clearTimeout(handshake);
           clientId = frame.clientId;
-          backend = this.options.localBackend(`native:${clientId}`);
+          execution = this.options.providerExecution(`native:${clientId}`);
           send("status", {
             status: "server_info",
             serverId: this.options.serverId,
@@ -167,7 +167,7 @@ export class ExecutionWebSocketServer {
         try {
           const context: NativeContext = {
             clientId,
-            backend,
+            execution,
             respond,
             observe: () => {
               observing = true;
@@ -204,13 +204,13 @@ export class ExecutionWebSocketServer {
     context: NativeContext,
   ): Promise<boolean> {
     const { providers } = this.options;
-    const { backend, respond } = context;
+    const { execution, respond } = context;
     switch (msg.type) {
       case "get_providers_snapshot_request":
-        respond("get_providers_snapshot_response", await backend.providers(msg));
+        respond("get_providers_snapshot_response", await execution.providers(msg));
         return true;
       case "refresh_providers_snapshot_request":
-        await backend.refresh(msg);
+        await execution.refresh(msg);
         respond("refresh_providers_snapshot_response", { acknowledged: true });
         return true;
       case "list_provider_models_request":
@@ -331,12 +331,12 @@ export class ExecutionWebSocketServer {
     msg: SessionInboundMessage,
     context: NativeContext,
   ): Promise<boolean> {
-    const { backend, respond } = context;
+    const { execution, respond } = context;
     switch (msg.type) {
       case "create_agent_request": {
         if (!msg.idempotencyKey || msg.initialPrompt !== undefined)
           throw new Error("Native execution requires keyed create and separate submit");
-        const agent = await backend.create(
+        const agent = await execution.create(
           msg.idempotencyKey,
           CreateOptionsSchema.parse({
             provider: msg.config.provider,
@@ -347,7 +347,6 @@ export class ExecutionWebSocketServer {
             mcpServers: msg.config.mcpServers,
             toolPolicy: msg.config.toolPolicy,
             cwd: msg.config.cwd,
-            backend: "local",
             mode: msg.config.modeId,
             env: msg.env,
             worktree: msg.worktree,
@@ -370,7 +369,7 @@ export class ExecutionWebSocketServer {
       case "send_agent_message_request": {
         if (!msg.messageId || msg.images?.length || msg.attachments?.length)
           throw new Error("Native execution requires a message ID and text submit");
-        await backend.send(msg.agentId, msg.messageId, msg.text);
+        await execution.send(msg.agentId, msg.messageId, msg.text);
         respond("send_agent_message_response", {
           agentId: msg.agentId,
           accepted: true,
@@ -379,8 +378,8 @@ export class ExecutionWebSocketServer {
         return true;
       }
       case "cancel_agent_request": {
-        const agent = await backend.get(msg.agentId);
-        await backend.control(msg.agentId, agent.workspaceId, "interrupt");
+        const agent = await execution.get(msg.agentId);
+        await execution.control(msg.agentId, agent.workspaceId, "interrupt");
         respond("status", { status: "agent_cancelled", agentId: msg.agentId });
         return true;
       }
@@ -394,7 +393,7 @@ export class ExecutionWebSocketServer {
     context: NativeContext,
   ): Promise<boolean> {
     const { agentStorage } = this.options;
-    const { backend, clientId, respond } = context;
+    const { execution, clientId, respond } = context;
     switch (msg.type) {
       case "archive_workspace_request": {
         const records = await agentStorage.listByWorkspace(msg.workspaceId);
@@ -403,7 +402,7 @@ export class ExecutionWebSocketServer {
             record.owner?.kind === "daemon" && record.owner.daemonId === `native:${clientId}`,
         );
         if (!owned) throw new Error("session_not_found");
-        await backend.control(owned.id, msg.workspaceId, "archive");
+        await execution.control(owned.id, msg.workspaceId, "archive");
         respond("archive_workspace_response", {
           workspaceId: msg.workspaceId,
           archivedAgentIds: records.map((record) => record.id),
@@ -419,7 +418,7 @@ export class ExecutionWebSocketServer {
         });
         return true;
       case "workspace.recovery.restore.request": {
-        await backend.restore(msg.workspaceId);
+        await execution.restore(msg.workspaceId);
         respond("workspace.recovery.restore.response", {
           workspaceId: msg.workspaceId,
           accepted: true,

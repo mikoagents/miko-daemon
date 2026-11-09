@@ -10,6 +10,6 @@
       "validation": "provider-availability.test.ts on macOS; inherited provider and supervision suites; Miko protocol/service contracts"
     }
   ],
-  "executionProtocol": "1.0.0",
+  "executionProtocol": "2.0.0",
   "releaseVersion": "0.8.0-miko.1"
 }
