@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix provider version tests on clean CI runners and normalize source line endings across platforms.
 - Trim the fork to provider execution, durable sessions and worktrees, process supervision,
   explicit Hub authorization and local/existing-Paseo adapters.
 - Remove application, speech, relay, plugin host, browser/terminal UI, scripts, resident scheduler,
