@@ -1,10 +1,10 @@
-import pino from "pino";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
-import type { ProviderEvent, ProviderRegistration } from "@getpaseo/plugin/server/provider";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
+import type { ManagedAgent } from "./agent-manager.js";
 import type {
   AgentClient,
   AgentMode,
@@ -14,12 +14,11 @@ import type {
   ProviderRefreshContext,
   ResolveAgentCreateConfigInput,
 } from "./agent-sdk-types.js";
-import type { ManagedAgent } from "./agent-manager.js";
 import {
   GLOBAL_PROVIDER_SNAPSHOT_KEY,
   ProviderSnapshotManager,
-  type ProviderSnapshot,
   resolveSnapshotCwd,
+  type ProviderSnapshot,
 } from "./provider-snapshot-manager.js";
 import { OpenCodeAgentClient } from "./providers/opencode-agent.js";
 
@@ -138,29 +137,6 @@ async function runTestCatalogActivities(
 }
 
 describe("ProviderSnapshotManager public surface", () => {
-  test("carries a plugin provider icon in snapshot metadata", () => {
-    const iconSvg = '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" /></svg>';
-    const registration: ProviderRegistration = {
-      id: "icon-provider",
-      label: "Icon Provider",
-      icon: iconSvg,
-      async connect() {
-        throw new Error("not opened by this test");
-      },
-    };
-    const manager = new ProviderSnapshotManager({ logger: createTestLogger() });
-
-    try {
-      manager.replacePluginProviders([registration]);
-
-      expect(manager.getSnapshot("/tmp/project").records.map(({ entry }) => entry)).toContainEqual(
-        expect.objectContaining({ provider: "icon-provider", iconSvg }),
-      );
-    } finally {
-      manager.destroy();
-    }
-  });
-
   test("validates complete Hub agent configurations through the current provider contract", async () => {
     const manager = new ProviderSnapshotManager({
       logger: createTestLogger(),
@@ -2102,191 +2078,6 @@ describe("ProviderSnapshotManager cwd routing", () => {
     }
   });
 
-  test.each([
-    { sharing: "shared", expectedCwds: [resolveSnapshotCwd("/tmp/plugin-a")] },
-    {
-      sharing: "distinct",
-      expectedCwds: [
-        undefined,
-        resolveSnapshotCwd("/tmp/plugin-a"),
-        resolveSnapshotCwd("/tmp/plugin-b"),
-      ],
-    },
-    {
-      sharing: "absent",
-      expectedCwds: [
-        undefined,
-        resolveSnapshotCwd("/tmp/plugin-a"),
-        resolveSnapshotCwd("/tmp/plugin-b"),
-      ],
-    },
-  ])(
-    "uses the plugin's provider-owned catalogue key: $sharing",
-    async ({ sharing, expectedCwds }) => {
-      let listener: ((event: ProviderEvent) => void) | null = null;
-      const cwds: Array<string | undefined> = [];
-      const registration: ProviderRegistration = {
-        id: "scoped-plugin",
-        label: "Scoped plugin",
-        getCatalogCacheKey:
-          sharing === "absent"
-            ? undefined
-            : async (options) =>
-                sharing === "shared"
-                  ? "host"
-                  : JSON.stringify(options.scope === "workspace" ? options.cwd : null),
-        async connect() {
-          return {
-            version: 1,
-            capabilities: [],
-            async send(input) {
-              if (input.type !== "catalog") return;
-              cwds.push(input.cwd);
-              listener?.({
-                type: "catalog",
-                requestId: input.requestId,
-                catalog: {
-                  models: [{ id: input.cwd ?? "global-model", label: "Model" }],
-                  modes: [],
-                },
-              });
-            },
-            onEvent(next) {
-              listener = next;
-              return () => {
-                listener = null;
-              };
-            },
-            async close() {},
-          };
-        },
-      };
-      const manager = new ProviderSnapshotManager({
-        logger: createTestLogger(),
-        providerOverrides: {
-          codex: { enabled: false },
-          claude: { enabled: false },
-          copilot: { enabled: false },
-          opencode: { enabled: false },
-          pi: { enabled: false },
-        },
-      });
-      try {
-        // Register after workspace views exist, as happens when reloading a plugin.
-        for (const cwd of [
-          resolveSnapshotCwd("/tmp/plugin-a"),
-          resolveSnapshotCwd("/tmp/plugin-b"),
-          undefined,
-        ]) {
-          await manager.listProviders({ cwd, wait: true });
-        }
-        const published: ProviderSnapshot[] = [];
-        manager.on("change", ({ current }) => published.push(current));
-        manager.replacePluginProviders([registration]);
-        for (const cwd of [
-          undefined,
-          resolveSnapshotCwd("/tmp/plugin-a"),
-          resolveSnapshotCwd("/tmp/plugin-b"),
-        ]) {
-          const entry = await manager.getProvider({ provider: registration.id, cwd, wait: true });
-          expect(entry.status).toBe("ready");
-          expect(entry.models?.[0]?.id).toBe(
-            sharing === "shared" ? resolveSnapshotCwd("/tmp/plugin-a") : (cwd ?? "global-model"),
-          );
-        }
-        expect(cwds).toEqual(expect.arrayContaining(expectedCwds));
-        expect(cwds).toHaveLength(expectedCwds.length);
-        for (const snapshot of published) {
-          expect(snapshot.records).toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                entry: expect.objectContaining({ provider: registration.id }),
-              }),
-            ]),
-          );
-        }
-        expect(new Set(published.map((snapshot) => snapshot.cwd))).toEqual(
-          new Set([
-            GLOBAL_PROVIDER_SNAPSHOT_KEY,
-            resolveSnapshotCwd("/tmp/plugin-a"),
-            resolveSnapshotCwd("/tmp/plugin-b"),
-          ]),
-        );
-        const lastFetchedAt = manager
-          .getSnapshot(resolveSnapshotCwd("/tmp/plugin-a"))
-          .records.find(({ entry }) => entry.provider === registration.id)!.entry.fetchedAt!;
-        await vi.waitFor(() => expect(Date.now()).toBeGreaterThan(Date.parse(lastFetchedAt)));
-        published.length = 0;
-        await manager.refreshSnapshotForCwd({
-          cwd: resolveSnapshotCwd("/tmp/plugin-a"),
-          providers: [registration.id],
-        });
-        const affectedCwds =
-          sharing === "shared"
-            ? [
-                GLOBAL_PROVIDER_SNAPSHOT_KEY,
-                resolveSnapshotCwd("/tmp/plugin-a"),
-                resolveSnapshotCwd("/tmp/plugin-b"),
-              ]
-            : [resolveSnapshotCwd("/tmp/plugin-a")];
-        expect(new Set(published.map((snapshot) => snapshot.cwd))).toEqual(new Set(affectedCwds));
-        expect(published).toHaveLength(affectedCwds.length);
-      } finally {
-        await manager.shutdown();
-        manager.destroy();
-      }
-    },
-  );
-
-  test("registers and unregisters plugin providers without rebuilding built-in clients", async () => {
-    let listener: ((event: ProviderEvent) => void) | null = null;
-    const registration: ProviderRegistration = {
-      id: "plugin-provider",
-      label: "Plugin provider",
-      async connect() {
-        return {
-          version: 1,
-          capabilities: [],
-          async send(input) {
-            if (input.type !== "catalog") return;
-            listener?.({
-              type: "catalog",
-              requestId: input.requestId,
-              catalog: { models: [{ id: "plugin-model", label: "Plugin model" }], modes: [] },
-            });
-          },
-          onEvent(nextListener) {
-            listener = nextListener;
-            return () => {
-              if (listener === nextListener) listener = null;
-            };
-          },
-          async close() {},
-        };
-      },
-    };
-    const manager = new ProviderSnapshotManager({ logger: createTestLogger() });
-    try {
-      const state = manager.replacePluginProviders([registration]);
-      expect(state.clients[registration.id]?.provider).toBe(registration.id);
-      await expect(
-        manager.getProvider({ provider: registration.id, wait: true }),
-      ).resolves.toMatchObject({
-        provider: registration.id,
-        source: "custom",
-        status: "ready",
-        models: [{ provider: registration.id, id: "plugin-model" }],
-      });
-
-      const withoutPlugin = manager.replacePluginProviders([]);
-      expect(manager.hasProvider(registration.id)).toBe(false);
-      expect(withoutPlugin.clients[registration.id]).toBeUndefined();
-    } finally {
-      await manager.shutdown();
-      manager.destroy();
-    }
-  });
-
   test("resolveSnapshotCwd normalizes pure drive letters to append backslash on Windows", () => {
     const resolved = resolveSnapshotCwd("C:");
     if (process.platform === "win32") {
@@ -3228,109 +3019,6 @@ test("shared result publication installs every target before notifying the first
       }
     }
   } finally {
-    manager.destroy();
-  }
-});
-
-test("plugin runtime replacement invalidates only changed registrations and commits all targets together", async () => {
-  const calls: string[] = [];
-  const closed: string[] = [];
-  function registration(id: string, model: string): ProviderRegistration {
-    return {
-      id,
-      label: id,
-      getCatalogCacheKey: async () => "host",
-      async connect() {
-        let listener: ((event: ProviderEvent) => void) | undefined;
-        return {
-          version: 1,
-          capabilities: [],
-          async send(input) {
-            if (input.type !== "catalog") return;
-            calls.push(model);
-            listener?.({
-              type: "catalog",
-              requestId: input.requestId,
-              catalog: { models: [{ id: model, label: model }], modes: [] },
-            });
-          },
-          onEvent(next) {
-            listener = next;
-            return () => {
-              listener = undefined;
-            };
-          },
-          async close() {
-            closed.push(model);
-          },
-        };
-      },
-    };
-  }
-  const first = registration("first-plugin", "first");
-  const second = registration("second-plugin", "second");
-  const manager = new ProviderSnapshotManager({
-    logger: createTestLogger(),
-    providerOverrides: PUBLICATION_PROVIDERS,
-    extraClients: {
-      codex: createExtraClient("codex", {
-        isAvailable: async () => true,
-        fetchCatalog: async () => {
-          calls.push("codex");
-          return { models: [], modes: [] };
-        },
-      }),
-    },
-  });
-  const cwds = ["/tmp/plugin-install-a", "/tmp/plugin-install-b"];
-  const warm = () => Promise.all(cwds.map((cwd) => manager.warmUpSnapshotForCwd({ cwd })));
-  try {
-    manager.replacePluginProviders([first, second]);
-    await warm();
-    const clients = manager.getAgentManagerProviderState().clients;
-    const snapshots = cwds.map((cwd) => manager.getSnapshot(cwd));
-    const observed: ProviderSnapshot[][] = [];
-    manager.on("change", () => observed.push(cwds.map((cwd) => manager.getSnapshot(cwd))));
-    manager.replacePluginProviders([first, second]);
-    await warm();
-    expect(calls.toSorted()).toEqual(["codex", "first", "second"]);
-    expect(manager.getSnapshot(cwds[0])).toBe(snapshots[0]);
-    expect(observed).toEqual([]);
-    manager.replacePluginProviders([registration("first-plugin", "restarted"), second]);
-    const loading = cwds.map((cwd) => manager.getSnapshot(cwd));
-    expect(observed).toHaveLength(2);
-    for (const reads of observed) {
-      expect(reads[0]).toBe(loading[0]);
-      expect(reads[1]).toBe(loading[1]);
-    }
-    const nextClients = manager.getAgentManagerProviderState().clients;
-    expect(nextClients.codex).toBe(clients.codex);
-    expect(nextClients["second-plugin"]).toBe(clients["second-plugin"]);
-    expect(nextClients["first-plugin"]).not.toBe(clients["first-plugin"]);
-    expect(loading[0]!.records.find(({ entry }) => entry.provider === "codex")).toBe(
-      snapshots[0]!.records.find(({ entry }) => entry.provider === "codex"),
-    );
-    expect(loading[0]!.records.find(({ entry }) => entry.provider === "second-plugin")).toBe(
-      snapshots[0]!.records.find(({ entry }) => entry.provider === "second-plugin"),
-    );
-    expect(
-      loading[0]!.records.find(({ entry }) => entry.provider === "first-plugin")!.entry.status,
-    ).toBe("loading");
-    await warm();
-    expect(calls.toSorted()).toEqual(["codex", "first", "restarted", "second"]);
-    expect(
-      manager.getSnapshot(cwds[0]).records.find(({ entry }) => entry.provider === "first-plugin")!
-        .entry.models![0]!.id,
-    ).toBe("restarted");
-    manager.replacePluginProviders([second]);
-    await warm();
-    expect(manager.hasProvider("first-plugin")).toBe(false);
-    expect(closed.toSorted()).toEqual(["first", "restarted"]);
-    await manager.shutdown();
-    expect(closed.toSorted()).toEqual(["first", "restarted", "second"]);
-    expect(calls.toSorted()).toEqual(["codex", "first", "restarted", "second"]);
-  } finally {
-    await manager.shutdown();
     manager.destroy();
   }
 });

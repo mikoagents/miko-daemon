@@ -12,7 +12,6 @@ import {
   runWorktreeTeardownCommands,
   WorktreeTeardownError,
 } from "../utils/worktree.js";
-import type { TerminalManager } from "../terminal/terminal-manager.js";
 import type {
   PersistedWorkspaceRecord,
   WorkspaceArchiveContext,
@@ -53,12 +52,6 @@ export interface ArchiveDependencies {
   stopWorkspaceSetup?: (workspaceId: string) => Promise<void>;
   assertWorkspaceAutomationAllowed?: (workspaceId: string) => Promise<void>;
   sessionLogger?: Logger;
-}
-
-export interface KillTerminalsForWorkspaceDependencies {
-  detachTerminalStream?: (terminalId: string, options: { emitExit: boolean }) => void;
-  sessionLogger: Logger;
-  terminalManager: TerminalManager | null;
 }
 
 export type ArchiveScope =
@@ -529,59 +522,6 @@ async function isDirectoryUnreferenced(
     if (matchesTarget(backingDirectory.path)) return false;
   }
   return true;
-}
-
-export async function killTerminalsForWorkspace(
-  dependencies: KillTerminalsForWorkspaceDependencies,
-  workspaceId: string,
-): Promise<void> {
-  const terminalManager = dependencies.terminalManager;
-  if (!terminalManager) {
-    return;
-  }
-
-  const terminalIds: string[] = [];
-  const terminalLists = await Promise.all(
-    terminalManager.listDirectories().map(async (terminalCwd) => {
-      try {
-        return await terminalManager.getTerminals(terminalCwd, { workspaceId });
-      } catch (error) {
-        dependencies.sessionLogger.warn(
-          { err: error, cwd: terminalCwd },
-          "Failed to enumerate workspace terminals during archive",
-        );
-        return [];
-      }
-    }),
-  );
-  for (const terminals of terminalLists) {
-    for (const terminal of terminals) {
-      if (terminal.workspaceId === workspaceId) {
-        terminalIds.push(terminal.id);
-      }
-    }
-  }
-
-  if (terminalIds.length === 0) {
-    return;
-  }
-
-  await Promise.allSettled(
-    terminalIds.map(async (terminalId) => {
-      try {
-        dependencies.detachTerminalStream?.(terminalId, { emitExit: true });
-        await terminalManager.killTerminalAndWait(terminalId, {
-          gracefulTimeoutMs: 2000,
-          forceTimeoutMs: 1500,
-        });
-      } catch (error) {
-        dependencies.sessionLogger.warn(
-          { err: error, terminalId },
-          "Terminal kill escalation failed during archive; proceeding anyway",
-        );
-      }
-    }),
-  );
 }
 
 // Archiving the last workspace of a project leaves the project record active.

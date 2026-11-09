@@ -1,5 +1,12 @@
 import { strict as assert } from "node:assert";
-import { chmodSync, mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "vitest";
@@ -16,6 +23,24 @@ afterEach(async () => {
 });
 
 describe("Hub CLI credentials", () => {
+  it("keeps Miko login authority separate from an existing Paseo credential store", () => {
+    const mikoHome = temporaryHome();
+    const paseoHome = temporaryHome();
+    const origin = "https://hub.test";
+    const paseo = new PrivateHubCredentialStore({ PASEO_HOME: paseoHome });
+    paseo.save({ origin, credential: "original-authority" });
+    const original = readFileSync(path.join(paseoHome, "hub-credentials.json"));
+    const miko = new PrivateHubCredentialStore({ MIKO_HOME: mikoHome, PASEO_HOME: paseoHome });
+    assert.equal(miko.active(), null);
+    miko.save({ origin, credential: "miko-authority" });
+    assert.equal(miko.active()?.credential, "miko-authority");
+    assert.deepEqual(readFileSync(path.join(paseoHome, "hub-credentials.json")), original);
+    assert.equal(
+      new PrivateHubCredentialStore({ MIKO_HOME: mikoHome }).active()?.credential,
+      "miko-authority",
+    );
+  });
+
   it("stores multiple normalized origins privately and selects the latest login", () => {
     const home = temporaryHome();
     const store = new PrivateHubCredentialStore({ PASEO_HOME: home });

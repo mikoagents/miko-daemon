@@ -514,8 +514,31 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
 describe("ClaudeAgentClient binary resolution", () => {
   const logger = createTestLogger();
 
-  test("resolves the installed Claude Code version", async () => {
-    await expect(resolveClaudeCodeVersion()).resolves.toMatch(/^\d+\.\d+\.\d+$/);
+  test("resolves the configured Claude Code version without a globally installed CLI", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "miko claude version "));
+    try {
+      const fixture = path.join(directory, "claude.cjs");
+      await fs.writeFile(
+        fixture,
+        `if (process.argv[2] !== "--version") process.exit(2);
+process.stdout.write("2.1.219 (Claude Code)\\n");
+`,
+      );
+      await expect(
+        resolveClaudeCodeVersion({
+          command: { mode: "replace", argv: [process.execPath, fixture] },
+        }),
+      ).resolves.toBe("2.1.219");
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("reports a missing Claude CLI when resolving its version", async () => {
+    vi.spyOn(executableUtils, "findExecutable").mockResolvedValue(null);
+    await expect(resolveClaudeCodeVersion()).rejects.toThrow(
+      "Claude binary not found while resolving Claude Code version",
+    );
   });
 
   test("loads user, project, and local Claude settings", async () => {

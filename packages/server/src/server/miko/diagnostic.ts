@@ -14,9 +14,6 @@ export async function diagnoseExecutionBackend(
     clientId: `miko:diagnostic:${randomUUID()}:${id}`,
     config: await readBackends(home),
     onClose: () => {},
-    attachLocal: async () => {
-      throw new Error("local_backend_not_remote");
-    },
   });
   try {
     return await connection.backend.providers({});

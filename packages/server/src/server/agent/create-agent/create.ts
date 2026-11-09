@@ -1,6 +1,5 @@
 import type { Logger } from "pino";
 
-import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import type { CreatePaseoWorktreeInput } from "../../paseo-worktree-service.js";
 import { expandUserPath, resolvePathFromBase } from "../../path-utils.js";
 import { toWorktreeRequestError } from "../../worktree-errors.js";
@@ -41,7 +40,6 @@ export interface CreateAgentCommandDependencies {
   logger: Logger;
   paseoHome?: string;
   worktreesRoot?: string;
-  terminalManager?: TerminalManager | null;
   providerSnapshotManager: Pick<ProviderSnapshotManager, "resolveCreateConfig">;
   createPaseoWorktree?: CreatePaseoWorktreeWorkflowFn;
   // Mints a fresh directory workspace for a cwd and returns its id.
@@ -79,6 +77,7 @@ export interface CreateAgentFromSessionInput {
 
 export interface CreateAgentFromMcpInput {
   kind: "mcp";
+  agentId?: string;
   provider: string;
   title: string;
   initialPrompt?: string;
@@ -182,7 +181,7 @@ export async function createAgentCommand(
 
   const snapshot = await dependencies.agentManager.createAgent(
     resolved.config,
-    input.kind === "session" ? input.agentId : undefined,
+    input.agentId,
     resolved.createOptions,
   );
 
@@ -551,7 +550,6 @@ async function resolveMcpCwd(params: {
     resolveDefaultBranch: baseBranch ? async () => baseBranch : undefined,
     setupContinuation: {
       kind: "agent",
-      terminalManager: dependencies.terminalManager ?? null,
       appendTimelineItem: ({ agentId, item }) =>
         appendTimelineItemIfAgentKnown({
           agentManager: dependencies.agentManager,

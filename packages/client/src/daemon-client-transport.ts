@@ -15,10 +15,6 @@ export {
   safeRandomId,
 } from "./daemon-client-transport-utils.js";
 export {
-  createEncryptedTransport,
-  createRelayE2eeTransportFactory,
-} from "./daemon-client-relay-e2ee-transport.js";
-export {
   bindWsHandler,
   createWebSocketTransportFactory,
   defaultWebSocketFactory,

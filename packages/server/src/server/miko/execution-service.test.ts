@@ -7,7 +7,7 @@ import { afterEach, expect, test } from "vitest";
 import { z } from "zod";
 import { WebSocketServer } from "ws";
 import { ExecutionService } from "./execution-service.js";
-import { LocalBackendSocket } from "./backends.js";
+import { PaseoBackend } from "./paseo-backend.js";
 import type { WebSocketLike } from "../websocket-server.js";
 import {
   RequestSchema,
@@ -20,6 +20,19 @@ const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).toReversed()) await cleanup();
 });
+class TestNativeSocket extends EventEmitter implements WebSocketLike {
+  readyState = 1;
+  constructor(private readonly receive: (value: unknown) => void) {
+    super();
+  }
+  send(data: string | Uint8Array | ArrayBuffer): void {
+    this.receive(JSON.parse(String(data)));
+  }
+  close(): void {
+    this.readyState = 3;
+    this.emit("close");
+  }
+}
 class HubSocket extends EventEmitter implements WebSocketLike {
   readyState = 1;
   readonly messages: unknown[] = [];
@@ -118,17 +131,21 @@ async function fixture(permissions: readonly string[] = ["hub.execute"]) {
   cleanups.push(() => rm(home, { recursive: true, force: true }));
   const native = new NativeService();
   function connect(daemonId = "registered-hub") {
-    const socket = new HubSocket(),
-      service = new ExecutionService({
-        socket,
-        home,
-        daemonId,
-        permissions,
-        attachLocal: async (value) => {
-          expect(value).toBeInstanceOf(LocalBackendSocket);
-          native.attach(value);
-        },
-      });
+    const socket = new HubSocket();
+    const peer = new TestNativeSocket((value) => backend.receive(value));
+    const backend = new PaseoBackend((frame) => peer.emit("message", frame));
+    peer.on("close", () => {
+      backend.close();
+      socket.close(1012);
+    });
+    native.attach(peer);
+    const service = new ExecutionService({
+      socket,
+      home,
+      daemonId,
+      permissions,
+      localBackend: backend,
+    });
     cleanups.push(async () => socket.close());
     socket.emit("message", JSON.stringify({ type: "miko.hello", version }));
     return { socket, service };
@@ -143,7 +160,7 @@ const options = {
   providerOptions: { sandbox_mode: "read-only" },
   toolPolicy: { preapproved: [{ kind: "mcp", server: "hub", tool: "finish_execution" }] },
 };
-test("local execution reuses native provider settings and sends prompt bytes unchanged", async () => {
+test("execution service preserves backend settings and sends prompt bytes unchanged", async () => {
   const f = await fixture(),
     { socket } = f.connect();
   const created = await socket.request("create", { key: "session", options }),
@@ -315,15 +332,4 @@ test("cancellation and cleanup persist stable execution keys and reject mismatch
   expect(
     f.native.requests.filter((request) => request["type"] === "archive_workspace_request"),
   ).toHaveLength(1);
-});
-
-test("missing native capabilities produce a response without prematurely closing the Hub connection", async () => {
-  const f = await fixture();
-  f.native.capabilities = false;
-  const { socket } = f.connect();
-  expect((await socket.request("create", { key: "session", options })).error?.code).toBe(
-    "backend_capabilities_unsupported",
-  );
-  expect(socket.readyState).toBe(1);
-  expect(f.native.creates).toBe(0);
 });

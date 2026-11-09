@@ -1,4 +1,6 @@
 import YAML from "yaml";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createHubInitScaffold,
@@ -52,8 +54,9 @@ describe("Hub init scaffold", () => {
   ] satisfies readonly [HubInitProvider, Record<string, string>][])(
     "creates a self-contained %s organization trigger",
     (provider, providerFilters) => {
+      const cwd = path.join(tmpdir(), "miko workspace");
       const scaffold = createHubInitScaffold({
-        cwd: "/workspace",
+        cwd,
         daemonSlug: "build-studio",
         agent: {
           provider: "codex",
@@ -94,7 +97,7 @@ describe("Hub init scaffold", () => {
       if (provider === "discord") expect(event.connection).toBe("discord-paseo");
       expect(event.filters.channels).toBeUndefined();
       expect(parsed.run).toMatchObject({
-        target: { daemon: "build-studio", cwd: "/workspace" },
+        target: { daemon: "build-studio", cwd },
         agent: { provider: "codex", model: "gpt-5", mode: "full-access" },
         continuation: { mode: "conversation" },
         max_runtime: "90m",

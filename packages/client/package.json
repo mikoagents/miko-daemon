@@ -1,7 +1,8 @@
 {
   "name": "@getpaseo/client",
   "version": "0.8.0-beta.1",
-  "description": "Paseo client SDK package",
+  "private": true,
+  "description": "Direct Paseo native control client for Miko",
   "files": [
     "dist",
     "!dist/**/*.map",
@@ -10,8 +11,8 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/daemon-client.d.ts",
+      "default": "./dist/daemon-client.js"
     },
     "./internal/daemon-client": {
       "types": "./dist/daemon-client.d.ts",
@@ -35,18 +36,15 @@
     "build:clean": "npm run clean && npm run build",
     "prepack": "npm run build:clean",
     "typecheck": "tsgo --noEmit",
-    "typecheck:examples": "tsgo -p tsconfig.examples.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@getpaseo/protocol": "0.8.0-beta.1",
-    "@getpaseo/relay": "0.8.0-beta.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20.9.0",
     "typescript": "^5.2.2",
     "vitest": "^4.1.6"
-  },
-  "private": true
+  }
 }

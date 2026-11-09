@@ -1,9 +1,8 @@
-import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocket } from "ws";
 import { z } from "zod";
-import type { WebSocketLike } from "../websocket-server.js";
+import type { ExecutionBackend } from "./local-backend.js";
 import { PaseoBackend } from "./paseo-backend.js";
 
 export const BackendsSchema = z
@@ -33,28 +32,8 @@ export async function readBackends(home: string): Promise<Backends> {
   }
 }
 
-/** A native session on the existing WebSocket server, without a second process or session owner. */
-export class LocalBackendSocket extends EventEmitter implements WebSocketLike {
-  readyState: number = WebSocket.OPEN;
-  constructor(private readonly receive: (value: unknown) => void) {
-    super();
-  }
-  send(data: string | Uint8Array | ArrayBuffer, callback?: (error?: Error) => void): void {
-    try {
-      if (typeof data === "string") this.receive(JSON.parse(data));
-      callback?.();
-    } catch (error) {
-      callback?.(error instanceof Error ? error : new Error("invalid_native_frame"));
-    }
-  }
-  close(code = 1000, reason = ""): void {
-    if (this.readyState === WebSocket.CLOSED) return;
-    this.readyState = WebSocket.CLOSED;
-    this.emit("close", code, reason);
-  }
-}
 export interface BackendConnection {
-  backend: PaseoBackend;
+  backend: ExecutionBackend;
   close(): void;
 }
 export async function openBackend(input: {
@@ -62,28 +41,13 @@ export async function openBackend(input: {
   clientId: string;
   config: Backends;
   onClose(): void;
-  attachLocal(socket: WebSocketLike): Promise<void>;
+  localBackend?: ExecutionBackend;
 }): Promise<BackendConnection> {
   let connection: BackendConnection;
   let established = false;
   if (input.id === "local") {
-    const socket = new LocalBackendSocket((value) => backend.receive(value));
-    const backend = new PaseoBackend((frame) => {
-      socket.emit("message", frame);
-    });
-    socket.on("close", () => {
-      backend.close();
-      if (established) input.onClose();
-    });
-    connection = { backend, close: () => socket.close() };
-    const ready = boundedReady(backend);
-    await input.attachLocal(socket);
-    await ready.catch((error) => {
-      connection.close();
-      throw error;
-    });
-    established = true;
-    return connection;
+    if (!input.localBackend) throw new Error("local_backend_unavailable");
+    return { backend: input.localBackend, close() {} };
   }
   const config = input.config[input.id];
   if (!config) throw new Error("backend_not_found");

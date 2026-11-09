@@ -3,14 +3,37 @@ import path from "node:path";
 import { z } from "zod";
 import type pino from "pino";
 
-import {
-  generateKeyPair,
-  exportPublicKey,
-  exportSecretKey,
-  importPublicKey,
-  importSecretKey,
-  type KeyPair,
-} from "@getpaseo/relay/e2ee";
+import { generateKeyPairSync } from "node:crypto";
+interface KeyPair {
+  publicKey: Uint8Array;
+  secretKey: Uint8Array;
+}
+function generateKeyPair(): KeyPair {
+  const pair = generateKeyPairSync("x25519");
+  const publicKey = pair.publicKey.export({ format: "jwk" });
+  const secretKey = pair.privateKey.export({ format: "jwk" });
+  return {
+    publicKey: Buffer.from(publicKey.x!, "base64url"),
+    secretKey: Buffer.from(secretKey.d!, "base64url"),
+  };
+}
+function importPublicKey(value: string): Uint8Array {
+  return decodeKey(value);
+}
+function importSecretKey(value: string): Uint8Array {
+  return decodeKey(value);
+}
+function decodeKey(value: string): Uint8Array {
+  const bytes = Buffer.from(value, "base64");
+  if (bytes.length !== 32) throw new Error("Invalid X25519 key length");
+  return bytes;
+}
+function exportPublicKey(value: Uint8Array): string {
+  return Buffer.from(value).toString("base64");
+}
+function exportSecretKey(value: Uint8Array): string {
+  return Buffer.from(value).toString("base64");
+}
 import { ensurePrivateFile, writePrivateFileAtomicSync } from "./private-files.js";
 
 const KeyPairSchema = z.object({

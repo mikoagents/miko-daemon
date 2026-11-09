@@ -1,24 +1,18 @@
-import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
-import { existsSync, readFileSync } from "node:fs";
-import { loadConfig, resolvePaseoHome } from "@getpaseo/server";
+import { DaemonClient, type WebSocketLike } from "@getpaseo/client/internal/daemon-client";
 import {
   buildDaemonWebSocketUrl,
-  buildRelayWebSocketUrl,
   normalizeHostPort,
   parseConnectionUri,
-  shouldUseTlsForDefaultHostedRelay,
 } from "@getpaseo/protocol/daemon-endpoints";
-import {
-  parseConnectionOfferFromUrl,
-  type ConnectionOffer,
-} from "@getpaseo/protocol/connection-offer";
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { parseSshTransportUri } from "@getpaseo/protocol/ssh-transport";
-import { DaemonClient, type WebSocketLike } from "@getpaseo/client/internal/daemon-client";
+import { loadConfig, resolvePaseoHome } from "@getpaseo/server";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { WebSocket } from "ws";
-import { getOrCreateCliClientId } from "./client-id.js";
-import { resolveCliVersion } from "../version.js";
 import { createSshTunnel } from "../ssh/ssh-tunnel.js";
+import { resolveCliVersion } from "../version.js";
+import { getOrCreateCliClientId } from "./client-id.js";
 
 export interface ConnectOptions {
   host?: string;
@@ -167,6 +161,8 @@ function resolveConfiguredIpcDaemonHost(env: NodeJS.ProcessEnv, paseoHome: strin
 }
 
 function resolveConfiguredTcpDaemonHost(env: NodeJS.ProcessEnv, paseoHome: string): string | null {
+  const pidHost = normalizeDaemonHost(readPidSocketTarget(paseoHome) ?? "");
+  if (isTcpDaemonHost(pidHost)) return pidHost;
   const configuredHost = normalizeDaemonHost(loadConfig(paseoHome, { env }).listen);
   if (!isTcpDaemonHost(configuredHost)) {
     return null;
@@ -316,54 +312,6 @@ async function tryConnectHost(
   }
 }
 
-async function connectViaRelayOffer(
-  offer: ConnectionOffer,
-  clientId: string,
-  timeout: number,
-  nodeWebSocketFactory: ReturnType<typeof createNodeWebSocketFactory>,
-): Promise<DaemonClient> {
-  const url = buildRelayWebSocketUrl({
-    endpoint: offer.relay.endpoint,
-    serverId: offer.serverId,
-    role: "client",
-    useTls: offer.relay.useTls ?? shouldUseTlsForDefaultHostedRelay(offer.relay.endpoint),
-  });
-
-  const client = new DaemonClient({
-    url,
-    clientId,
-    clientType: "cli",
-    appVersion: resolveCliVersion(),
-    connectTimeoutMs: timeout,
-    webSocketFactory: (
-      target: string,
-      config?: { headers?: Record<string, string>; protocols?: string[] },
-    ) => nodeWebSocketFactory(target, { headers: config?.headers, protocols: config?.protocols }),
-    e2ee: { enabled: true, daemonPublicKeyB64: offer.daemonPublicKeyB64 },
-    reconnect: { enabled: false },
-  });
-
-  try {
-    await client.connect();
-    return client;
-  } catch (error) {
-    await client.close().catch(() => {});
-    const message = error instanceof Error ? error.message : String(error);
-    const lastError = client.lastError ? ` (${client.lastError})` : "";
-    throw new Error(`Failed to connect via relay offer: ${message}${lastError}`, { cause: error });
-  }
-}
-
-function parseHostOfferOrNull(host: string | undefined): ConnectionOffer | null {
-  if (!host) return null;
-  try {
-    return parseConnectionOfferFromUrl(host);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid pairing offer URL: ${message}`, { cause: error });
-  }
-}
-
 export async function connectToDaemon(options?: ConnectOptions): Promise<DaemonClient> {
   const timeout = options?.timeout ?? DEFAULT_TIMEOUT;
   const clientId = await getOrCreateCliClientId();
@@ -388,11 +336,6 @@ export async function connectToDaemon(options?: ConnectOptions): Promise<DaemonC
     if (failure) throw new Error(`SSH connection failed: ${failure}`, { cause: result.error });
     throw result.error;
   }
-  const offer = parseHostOfferOrNull(explicitHost);
-  if (offer) {
-    return connectViaRelayOffer(offer, clientId, timeout, nodeWebSocketFactory);
-  }
-
   const hosts = resolveDaemonHostCandidates(options);
 
   async function tryNext(index: number, lastError: unknown): Promise<DaemonClient> {

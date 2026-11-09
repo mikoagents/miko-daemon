@@ -1,4 +1,4 @@
-import { PROVIDER_REGISTRY } from "../agent/provider-registry.js";
+import { builtinSupportsExactMcpPreapproval } from "../agent/provider-registry.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -63,8 +63,7 @@ export class PaseoBackend implements AgentConnection {
     const result = await this.request({ type: "get_providers_snapshot_request", ...options });
     const snapshot = ProviderSnapshotSchema.parse(result);
     for (const entry of snapshot.entries)
-      entry.supportsExactMcpPreapproval ??=
-        PROVIDER_REGISTRY[entry.provider]?.supportsExactMcpPreapproval ?? false;
+      entry.supportsExactMcpPreapproval ??= builtinSupportsExactMcpPreapproval(entry.provider);
     return snapshot;
   }
 

@@ -11,14 +11,6 @@ export {
   type PersistedConfig,
 } from "./persisted-config.js";
 export { hashDaemonPassword, isBearerTokenValid } from "./auth.js";
-export { generateLocalPairingOffer, type LocalPairingOffer } from "./pairing-offer.js";
-export {
-  ConnectionOfferSchema,
-  decodeOfferFragmentPayload,
-  parseConnectionOfferFromUrl,
-  type ConnectionOffer,
-} from "@getpaseo/protocol/connection-offer";
-export { buildRelayWebSocketUrl } from "@getpaseo/protocol/daemon-endpoints";
 export {
   buildDaemonWebSocketUrl,
   deriveLabelFromEndpoint,
@@ -27,27 +19,6 @@ export {
   shouldUseTlsForDefaultHostedRelay,
 } from "@getpaseo/protocol/daemon-endpoints";
 export { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
-export {
-  DirectTcpHostConnectionSchema,
-  type DirectTcpHostConnection,
-  type NormalizedDirectTcpHostConnection,
-} from "@getpaseo/protocol/host-connection-schema";
-export {
-  ensureLocalSpeechModels,
-  listLocalSpeechModels,
-  type LocalSpeechModelId,
-  type LocalSttModelId,
-  type LocalTtsModelId,
-} from "./speech/providers/local/models.js";
-export {
-  applySherpaLoaderEnv,
-  resolveSherpaLoaderEnv,
-  sherpaLoaderEnvKey,
-  sherpaPlatformArch,
-  sherpaPlatformPackageName,
-  type SherpaLoaderEnvKey,
-  type SherpaLoaderEnvResolution,
-} from "./speech/providers/local/sherpa/sherpa-runtime-env.js";
 
 // Provider binary resolution
 export {

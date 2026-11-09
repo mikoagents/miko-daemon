@@ -1,12 +1,10 @@
-# @getpaseo/protocol
+# Native protocol
 
-Shared Paseo protocol schemas, codecs, and wire types.
+Retains Paseo's native wire schemas, provider/configuration types and codecs for direct control
+and existing-service interoperability. Native product message definitions are schema vocabulary;
+Miko does not start their services or expose their operations through its execution API.
 
-## Stability
-
-This package is public so Paseo's published packages can depend on it cleanly.
-It is not a stable public API yet.
-
-Schemas, exports, wire helpers, and types may change or disappear in any release
-without advance notice. Use it outside Paseo at your own risk until the package
-is explicitly documented as stable.
+Miko's public Hub execution contract is the separate `@mikoagents/execution-protocol` package.
+Its exact version and source digest are validated jointly with Hub. Keep native wire definitions
+compatible when selecting upstream fixes; package source names remain upstream names until staged
+Miko packaging rewrites imports.

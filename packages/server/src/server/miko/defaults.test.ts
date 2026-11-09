@@ -13,11 +13,10 @@ test("Miko state and default network/features remain separate from Paseo", async
     );
     const config = loadConfig(home, { env: {} });
     expect(config.paseoHome).toBe(home);
-    expect(config.relayEnabled).toBe(false);
-    expect(config.webUi.enabled).toBe(false);
-    expect(config.mcpInjectIntoAgents).toBe(false);
-    expect(config.speech.providers.dictationStt.enabled).toBe(false);
-    expect(config.speech.providers.voiceTts.enabled).toBe(false);
+    expect(config.listen).toBe("127.0.0.1:7767");
+    expect(config).not.toHaveProperty("relayEnabled");
+    expect(config).not.toHaveProperty("speech");
+    expect(config).not.toHaveProperty("webUi");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
