@@ -266,5 +266,6 @@ const KNOWN_ERRORS = new Set([
   "request_outcome_unknown",
   "session_binding_mismatch",
   "session_not_found",
+  "session_history_unavailable",
   "operation_unsupported",
 ]);

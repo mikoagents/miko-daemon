@@ -505,6 +505,11 @@ export class ExecutionWebSocketServer {
         respond("agent.timeline.set_subscription.response", { agentIds: msg.agentIds });
         return true;
       case "fetch_agent_timeline_request": {
+        if (
+          !agentManager.getAgent(msg.agentId) &&
+          !(await agentStorage.get(msg.agentId))?.persistence
+        )
+          throw new Error("session_history_unavailable");
         await ensureAgentLoaded(msg.agentId, { agentManager, agentStorage, logger });
         const result = agentManager.fetchTimeline(msg.agentId, msg);
         const entries = projectTimelineRows({

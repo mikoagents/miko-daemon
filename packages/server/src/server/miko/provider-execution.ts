@@ -204,6 +204,8 @@ export class ProviderExecution implements ExecutionRuntime {
   async timeline(agentId: string, options: TimelineOptions): Promise<TimelinePage> {
     const record = await this.requireOwned(agentId);
     const generation = this.generation;
+    if (!this.options.agentManager.getAgent(agentId) && !record.persistence)
+      throw new Error("session_history_unavailable");
     await ensureAgentLoaded(agentId, this.options);
     this.requireAuthority(generation);
     const result = this.options.agentManager.fetchTimeline(agentId, options);

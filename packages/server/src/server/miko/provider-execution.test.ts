@@ -234,6 +234,22 @@ test("revocation during creation closes the admitted provider session and remove
     expect(manager.listAgents()).toHaveLength(0);
     expect(await storage.list()).toHaveLength(0);
     expect(closed).toBe(1);
+    execution.setAuthority(true);
+    const historyAgent = await execution.create("history-only", {
+      provider: "codex",
+      cwd: home,
+      env: {},
+      toolPolicy: { preapproved: [] },
+    });
+    await manager.closeAgent(historyAgent.id);
+    await storage.flush();
+    const historyRecord = await storage.get(historyAgent.id);
+    if (!historyRecord) throw new Error("Missing stored history agent");
+    await storage.upsert({ ...historyRecord, persistence: null });
+    await expect(
+      execution.timeline(historyAgent.id, { direction: "tail", limit: 100 }),
+    ).rejects.toThrow("session_history_unavailable");
+    expect(manager.listAgents()).toHaveLength(0);
   } finally {
     proceed();
     manager.prepareForShutdown();
