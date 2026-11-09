@@ -237,7 +237,10 @@ async function runFollowMode(
     });
   } finally {
     unsubscribe();
-    interest();
-    await client.close();
+    try {
+      await client.close();
+    } finally {
+      interest();
+    }
   }
 }
