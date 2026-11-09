@@ -1,9 +1,9 @@
 {
   "name": "@getpaseo/cli",
   "version": "0.8.0-beta.1",
-  "description": "Paseo CLI - control your AI coding agents from the command line",
+  "description": "Miko CLI \u2014 self-hosted agent execution for Hub",
   "bin": {
-    "paseo": "bin/paseo"
+    "miko": "bin/miko"
   },
   "files": [
     "bin",
@@ -46,5 +46,6 @@
     "typescript": "^5.2.2",
     "vitest": "^4.1.6",
     "zx": "^8.8.5"
-  }
+  },
+  "private": true
 }

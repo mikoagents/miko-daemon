@@ -1,3 +1,4 @@
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +26,7 @@ import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { mergeHostnames, parseHostnamesEnv, type HostnamesConfig } from "./hostnames.js";
 import { resolveGitProcessPolicy } from "../utils/git-process-scheduler.js";
 
-const DEFAULT_PORT = 6767;
+const DEFAULT_PORT = MIKO_PRODUCT.port;
 const DEFAULT_RELAY_ENDPOINT = "relay.paseo.sh:443";
 const DEFAULT_APP_BASE_URL = "https://app.paseo.sh";
 const DEFAULT_TRUSTED_PROXIES = ["loopback"];
@@ -292,10 +293,7 @@ function resolveRelayConfig(input: ResolveRelayInput): ResolvedRelay {
   // COMPAT(relayOptInDefault): daemons whose startup config omitted this field
   // retain relay-on removal semantics until 2027-01-31. Modern homes use false.
   const enabled =
-    input.cliRelayEnabled ??
-    environmentEnabled ??
-    input.persisted.daemon?.relay?.enabled ??
-    input.enabledFallback;
+    input.cliRelayEnabled ?? environmentEnabled ?? input.persisted.daemon?.relay?.enabled ?? false;
   const endpoint =
     input.env.PASEO_RELAY_ENDPOINT ??
     input.persisted.daemon?.relay?.endpoint ??

@@ -18,7 +18,7 @@ export function startCommand(): Command {
     .description("Start the local Paseo daemon")
     .option("--listen <listen>", "Listen target (host:port, port, or unix socket path)")
     .option("--port <port>", "Port to listen on (default: 6767)")
-    .option("--home <path>", "Paseo home directory (default: ~/.paseo)")
+    .option("--home <path>", "Miko home directory (default: ~/.miko)")
     .option("--foreground", "Run in foreground (don't daemonize)")
     .option("--relay", "Enable relay connection")
     .option("--no-relay", "Disable relay connection")

@@ -1,3 +1,4 @@
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { createPaseoDaemon } from "./bootstrap.js";
@@ -7,7 +8,7 @@ import { createRootLogger } from "./logger.js";
 import type { DaemonLifecycleIntent } from "./bootstrap.js";
 import { getProcessDiagnostics } from "./process-diagnostics.js";
 
-process.title = "Paseo Daemon";
+process.title = `${MIKO_PRODUCT.name} Daemon`;
 
 type SupervisorLifecycleMessage =
   | {

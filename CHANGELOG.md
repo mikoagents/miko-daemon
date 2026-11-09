@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Miko CLI, isolated daemon state and release artifacts under `@mikoagents/*`, retaining the Paseo supervisor and provider architecture.
+- Versioned Hub execution protocol with local and existing Paseo backends, persistent session bindings and replay-safe request receipts.
+
 ## 0.8.0-beta.1 - 2026-09-08
 
 This release considerably extends what plugins can do: complete providers, custom components in the chat, slash commands, settings screens, and agent lifecycle hooks.

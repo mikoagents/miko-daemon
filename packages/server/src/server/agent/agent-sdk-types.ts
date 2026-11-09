@@ -115,6 +115,7 @@ export function filterSelectableAgentModels(
 }
 
 export interface ProviderSnapshotEntry {
+  supportsExactMcpPreapproval?: boolean;
   provider: AgentProvider;
   status: ProviderStatus;
   enabled: boolean;

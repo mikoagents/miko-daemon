@@ -1,5 +1,5 @@
 {
-  "name": "paseo",
+  "name": "miko-daemon",
   "version": "0.8.0-beta.1",
   "private": true,
   "description": "Paseo: voice-controlled development environment for local AI coding agents",
@@ -21,16 +21,13 @@
     "url": "https://github.com/getpaseo/paseo.git"
   },
   "workspaces": [
-    "packages/expo-two-way-audio",
     "packages/highlight",
     "packages/plugin",
+    "packages/relay",
     "packages/protocol",
     "packages/client",
+    "packages/execution-protocol",
     "packages/server",
-    "packages/app",
-    "packages/relay",
-    "packages/website",
-    "packages/desktop",
     "packages/cli"
   ],
   "scripts": {
@@ -118,7 +115,11 @@
     "release:promote": "npm run release:check && npm run version:all:promote && npm run release:publish && npm run release:push",
     "release:patch": "npm run release:check && npm run version:all:patch && npm run release:publish && npm run release:push",
     "release:minor": "npm run release:check && npm run version:all:minor && npm run release:publish && npm run release:push",
-    "release:major": "npm run release:check && npm run version:all:major && npm run release:publish && npm run release:push"
+    "release:major": "npm run release:check && npm run version:all:major && npm run release:publish && npm run release:push",
+    "build:miko": "npm run build --workspace=@mikoagents/execution-protocol && npm run build:server",
+    "pack:miko": "node scripts/pack-miko.mjs",
+    "test:miko": "npm run test --workspace=@mikoagents/execution-protocol && npm run test:miko --workspace=@getpaseo/server",
+    "typecheck:miko": "npm run typecheck:server && npm run typecheck --workspace=@mikoagents/execution-protocol"
   },
   "devDependencies": {
     "@types/ws": "^8.5.14",
@@ -126,7 +127,6 @@
     "@vercel/nft": "^1.5.0",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "electron": "44.2.0",
     "get-port-cli": "^3.0.0",
     "js-yaml": "^4.1.1",
     "knip": "^5.82.1",

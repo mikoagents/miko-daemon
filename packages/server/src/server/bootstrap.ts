@@ -1,3 +1,5 @@
+import { DaemonPermissionSchema } from "@getpaseo/protocol/messages";
+import { ExecutionService } from "./miko/execution-service.js";
 import { describeHookWorkspace } from "./plugins/lifecycle/index.js";
 import express from "express";
 import { createServer as createHTTPServer, type IncomingMessage, type ServerResponse } from "http";
@@ -1220,6 +1222,7 @@ export async function createPaseoDaemon(
       killTerminalsForWorkspace({ terminalManager, sessionLogger: logger }, workspaceId),
     logger,
   });
+  const mikoConnections = new Map<string, ExecutionService>();
   const hubRelationships = new HubRelationshipController({
     paseoHome: config.paseoHome,
     hostname: getHostname(),
@@ -1232,27 +1235,41 @@ export async function createPaseoDaemon(
     createDaemonId: dependencies.createHubDaemonId,
     attachSocket: async (socket, options) => {
       if (!wsServer) throw new Error("WebSocket server is not running");
-      await wsServer.attachExternalSocket(
+      mikoConnections.get(options.principalId)?.close();
+      const service = new ExecutionService({
         socket,
-        { transport: "hub", hubDaemonId: options.daemonId },
-        {
-          principalId: options.principalId,
-          permissions: options.permissions,
-          hubExecutionAgents: options.agents,
-        },
-        options.sessionProtocol === "legacy"
-          ? {
+        home: config.paseoHome,
+        daemonId: options.daemonId,
+        permissions: options.permissions,
+        attachLocal: async (nativeSocket, permissions) => {
+          await wsServer!.attachExternalSocket(
+            nativeSocket,
+            { transport: "hub", hubDaemonId: options.daemonId },
+            {
+              principalId: options.principalId,
+              permissions: permissions.map((value) => DaemonPermissionSchema.parse(value)),
+              hubExecutionAgents: options.agents,
+            },
+            {
               type: "hello",
-              clientId: `hub:${options.daemonId}`,
+              clientId: `miko:${options.daemonId}`,
               clientType: "hub",
               protocolVersion: 1,
-            }
-          : undefined,
-      );
+              capabilities: { all_providers: true, selective_agent_timeline: true },
+            },
+          );
+        },
+      });
+      mikoConnections.set(options.principalId, service);
+      socket.once("close", () => {
+        if (mikoConnections.get(options.principalId) === service)
+          mikoConnections.delete(options.principalId);
+      });
     },
     updateAttachedPermissions: (principalId, permissions) => {
       if (!wsServer) throw new Error("WebSocket server is not running");
       wsServer.updatePrincipalPermissions(principalId, permissions);
+      mikoConnections.get(principalId)?.updatePermissions(permissions);
     },
     createExecutionAgents: (daemonId) =>
       new DaemonExecutions({

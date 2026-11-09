@@ -1,10 +1,11 @@
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
 const CLIENT_SESSION_KEY_FILE = join(
-  process.env.PASEO_HOME ?? join(homedir(), ".paseo"),
+  process.env.MIKO_HOME ?? process.env.PASEO_HOME ?? join(homedir(), MIKO_PRODUCT.homeDirectory),
   "cli-client-id",
 );
 

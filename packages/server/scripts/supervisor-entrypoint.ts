@@ -1,3 +1,4 @@
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { fileURLToPath } from "url";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -14,7 +15,7 @@ import { runSupervisor } from "./supervisor.js";
 import { resolveSupervisorLogFile } from "./supervisor-log-config.js";
 import { applySherpaLoaderEnv } from "../src/server/speech/providers/local/sherpa/sherpa-runtime-env.js";
 
-process.title = "Paseo Supervisor";
+process.title = `${MIKO_PRODUCT.name} Supervisor`;
 
 interface DaemonRunnerConfig {
   devMode: boolean;

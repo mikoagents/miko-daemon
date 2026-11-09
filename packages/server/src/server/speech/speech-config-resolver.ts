@@ -1,3 +1,4 @@
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { z } from "zod";
 
 import type { PersistedConfig } from "../persisted-config.js";
@@ -44,7 +45,7 @@ const RequestedSpeechProvidersSchema = z.object({
 });
 
 function resolveOptionalBooleanFlag(value: unknown): boolean {
-  return OptionalBooleanFlagSchema.parse(value) ?? true;
+  return OptionalBooleanFlagSchema.parse(value) ?? MIKO_PRODUCT.speechEnabled;
 }
 
 interface FeatureProviderInputs {

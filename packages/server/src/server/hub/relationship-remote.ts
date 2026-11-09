@@ -168,6 +168,7 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
         authorization: `Bearer ${input.credential}`,
         "x-paseo-daemon-id": input.daemonId,
         "x-paseo-session-protocol": "1",
+        "x-miko-execution-protocol": "1.0.0",
       },
     });
     let settled = false;

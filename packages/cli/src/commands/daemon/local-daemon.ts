@@ -123,7 +123,7 @@ function envWithHome(home?: string): NodeJS.ProcessEnv {
     return process.env;
   }
 
-  return { ...process.env, PASEO_HOME: home };
+  return { ...process.env, MIKO_HOME: home, PASEO_HOME: home };
 }
 
 function buildRunnerArgs(options: DaemonStartOptions): string[] {
@@ -157,6 +157,7 @@ function buildRunnerArgs(options: DaemonStartOptions): string[] {
 function buildChildEnv(options: DaemonStartOptions): NodeJS.ProcessEnv {
   const childEnv: NodeJS.ProcessEnv = { ...process.env };
   if (options.home) {
+    childEnv.MIKO_HOME = options.home;
     childEnv.PASEO_HOME = options.home;
   }
   if (options.listen) {

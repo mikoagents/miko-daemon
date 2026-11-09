@@ -1139,6 +1139,7 @@ export const ForgeIssueAttachmentSchema = z.object({
 });
 
 export const ExternalResourceAttachmentMetadataSchema = z.object({
+  supportsExactMcpPreapproval: z.boolean().optional(),
   provider: z.string(),
   providerLabel: z.string(),
   resourceType: z.string(),

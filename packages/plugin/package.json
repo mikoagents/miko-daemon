@@ -86,5 +86,6 @@
     "react-native": {
       "optional": true
     }
-  }
+  },
+  "private": true
 }

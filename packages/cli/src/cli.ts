@@ -1,3 +1,5 @@
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
+import { createBackendCommand } from "./commands/backend.js";
 import { Command, Option } from "commander";
 import { createAgentCommand } from "./commands/agent/index.js";
 import { createDaemonCommand } from "./commands/daemon/index.js";
@@ -50,10 +52,11 @@ function resolveHostnamesOption(hostnames: unknown, allowedHosts: unknown): stri
 
 export function createCli(): Command {
   const program = new Command();
+  program.addCommand(createBackendCommand());
 
   program
-    .name("paseo")
-    .description("Paseo CLI - control your AI coding agents from the command line")
+    .name(MIKO_PRODUCT.command)
+    .description("Miko CLI - self-hosted agent execution for Hub")
     .version(VERSION, "-v, --version", "output the version number")
     // Global output options
     .option("-o, --format <format>", "output format: table, json, yaml", "table")
@@ -130,7 +133,7 @@ export function createCli(): Command {
       .command("status")
       .description('Show local daemon status (alias for "paseo daemon status")'),
   )
-    .option("--home <path>", "Paseo home directory (default: ~/.paseo)")
+    .option("--home <path>", "Miko home directory (default: ~/.miko)")
     .action(withOutput(runDaemonStatusCommand));
 
   addJsonAndDaemonHostOptions(
@@ -142,7 +145,7 @@ export function createCli(): Command {
       .command("restart")
       .description('Restart local daemon (alias for "paseo daemon restart")'),
   )
-    .option("--home <path>", "Paseo home directory (default: ~/.paseo)")
+    .option("--home <path>", "Miko home directory (default: ~/.miko)")
     .option("--timeout <seconds>", "Wait timeout before force step (default: 15)")
     .option("--force", "Send SIGKILL if graceful stop times out")
     .option(
