@@ -1,3 +1,4 @@
+import { MIKO_PRODUCT } from "@getpaseo/protocol/miko-product";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -137,7 +138,7 @@ export class PrivateHubCredentialStore implements HubCredentialStore {
 }
 
 function resolvePaseoHome(env: Readonly<Record<string, string | undefined>>): string {
-  const configured = env.PASEO_HOME ?? "~/.paseo";
+  const configured = env.MIKO_HOME ?? env.PASEO_HOME ?? `~/${MIKO_PRODUCT.homeDirectory}`;
   const expanded = configured === "~" ? homedir() : configured.replace(/^~\//u, `${homedir()}/`);
   return path.resolve(expanded);
 }
@@ -158,13 +159,13 @@ function isMissingFile(error: unknown): boolean {
 function invalidCredentialFile(): HubCommandError {
   return new HubCommandError(
     "HUB_CREDENTIALS_INVALID",
-    "Stored Hub login is invalid. Run `paseo hub login <origin>` to replace it.",
+    `Stored Hub login is invalid. Run \`${MIKO_PRODUCT.command} hub login <origin>\` to replace it.`,
   );
 }
 
 function credentialStorageError(): HubCommandError {
   return new HubCommandError(
     "HUB_CREDENTIALS_UNAVAILABLE",
-    "Could not access the private Hub credential store under PASEO_HOME.",
+    "Could not access the private Hub credential store under MIKO_HOME.",
   );
 }

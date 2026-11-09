@@ -6,6 +6,7 @@
   explicit Hub authorization and local/existing-Paseo adapters.
 - Remove application, speech, relay, plugin host, browser/terminal UI, scripts, resident scheduler,
   related dependencies and product release/build/CI tooling.
+- Keep CLI Hub login credentials in the same isolated Miko home as the daemon.
 - Restrict CLI to daemon, provider, backend and Hub management. Local execution uses the native
   session manager directly. Removed operations and configuration fail explicitly.
 
