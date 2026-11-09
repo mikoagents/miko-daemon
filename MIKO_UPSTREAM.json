@@ -1,7 +1,15 @@
 {
   "repository": "https://github.com/getpaseo/paseo.git",
   "baseline": "433e67b18b7964a92d593bdc78c518143accfc8b",
-  "syncedCommits": [],
+  "syncedCommits": [
+    {
+      "source": "79f2db8d56864245fb4361bacd939377af88f78b",
+      "applied": "7db9eb2cb",
+      "subject": "Bounded provider fixture cleanup retries on Windows",
+      "dependencies": [],
+      "validation": "provider-availability.test.ts on macOS; inherited provider and supervision suites; Miko protocol/service contracts"
+    }
+  ],
   "executionProtocol": "1.0.0",
   "releaseVersion": "0.8.0-miko.1"
 }

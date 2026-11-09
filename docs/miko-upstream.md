@@ -39,3 +39,11 @@ or regenerate the repository as a source archive.
   explicit upstream `PASEO_HOME`/config overrides remain available for inherited tooling.
   Relay, speech, web UI and injected native MCP are off by default. Core terminal, filesystem,
   process and provider facilities remain available.
+
+## Synchronization exercise
+
+On 2026-11-09, `sync/provider-fixture-cleanup` applied upstream
+`79f2db8d56864245fb4361bacd939377af88f78b` with `cherry-pick -x`. The change touches only bounded
+cleanup in the provider availability fixture and has no dependency commits. Its provider tests
+passed on macOS; Windows execution remains CI's responsibility. This validates preserving source
+attribution without moving the baseline or modifying provider/session architecture.
