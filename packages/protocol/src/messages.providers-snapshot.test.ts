@@ -111,3 +111,24 @@ test("accepts a bodyless announcement with separate discovery freshness", async 
   const result = validateWSOutboundMessage({ type: "session", message });
   expect(result.success).toBe(true);
 });
+
+test("preserves declared MCP preapproval for custom profiles on full and compact snapshot wires", () => {
+  const entry = {
+    provider: "my-codex-profile",
+    status: "ready",
+    enabled: true,
+    supportsExactMcpPreapproval: true,
+  };
+  const payload = {
+    requestId: "request",
+    generatedAt: new Date().toISOString(),
+    entries: [entry],
+    compactSnapshot: { entries: [entry], thinkingSets: [] },
+  };
+  const parsed = GetProvidersSnapshotResponseMessageSchema.parse({
+    type: "get_providers_snapshot_response",
+    payload,
+  });
+  expect(parsed.payload.entries[0]?.supportsExactMcpPreapproval).toBe(true);
+  expect(parsed.payload.compactSnapshot?.entries[0]?.supportsExactMcpPreapproval).toBe(true);
+});

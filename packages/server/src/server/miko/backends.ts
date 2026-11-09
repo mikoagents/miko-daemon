@@ -59,11 +59,13 @@ export interface BackendConnection {
 }
 export async function openBackend(input: {
   id: string;
+  clientId: string;
   config: Backends;
   onClose(): void;
   attachLocal(socket: WebSocketLike): Promise<void>;
 }): Promise<BackendConnection> {
   let connection: BackendConnection;
+  let established = false;
   if (input.id === "local") {
     const socket = new LocalBackendSocket((value) => backend.receive(value));
     const backend = new PaseoBackend((frame) => {
@@ -71,7 +73,7 @@ export async function openBackend(input: {
     });
     socket.on("close", () => {
       backend.close();
-      input.onClose();
+      if (established) input.onClose();
     });
     connection = { backend, close: () => socket.close() };
     const ready = boundedReady(backend);
@@ -80,6 +82,7 @@ export async function openBackend(input: {
       connection.close();
       throw error;
     });
+    established = true;
     return connection;
   }
   const config = input.config[input.id];
@@ -101,7 +104,7 @@ export async function openBackend(input: {
     socket.send(
       JSON.stringify({
         type: "hello",
-        clientId: "miko:hub",
+        clientId: input.clientId,
         clientType: "cli",
         protocolVersion: 1,
         capabilities: { all_providers: true, selective_agent_timeline: true },
@@ -111,12 +114,13 @@ export async function openBackend(input: {
   socket.on("error", () => backend.close());
   socket.on("close", () => {
     backend.close();
-    input.onClose();
+    if (established) input.onClose();
   });
   await boundedReady(backend).catch((error) => {
     socket.terminate();
     throw error;
   });
+  established = true;
   return connection;
 }
 async function boundedReady(backend: PaseoBackend): Promise<void> {

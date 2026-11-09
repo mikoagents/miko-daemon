@@ -1,8 +1,9 @@
+import { connectToDaemon } from "../utils/client.js";
 import { Command } from "commander";
 import { readFile, mkdir, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { resolvePaseoHome } from "@getpaseo/server";
+import { diagnoseExecutionBackend, resolvePaseoHome } from "@getpaseo/server";
 import { z } from "zod";
 import { addJsonOption } from "../utils/command-options.js";
 import {
@@ -50,6 +51,23 @@ const schema: OutputSchema<BackendRow> = {
   renderHuman(result) {
     return JSON.stringify(result.data, null, 2);
   },
+};
+interface DiagnosticRow {
+  backend: string;
+  provider: string;
+  status: string;
+  models: number;
+  exactMcpPreapproval: boolean;
+}
+const diagnosticSchema: OutputSchema<DiagnosticRow> = {
+  idField: "provider",
+  columns: [
+    { header: "Backend", field: "backend" },
+    { header: "Provider", field: "provider" },
+    { header: "Status", field: "status" },
+    { header: "Models", field: "models" },
+    { header: "Exact MCP preapproval", field: "exactMcpPreapproval" },
+  ],
 };
 export function createBackendCommand(): Command {
   const command = new Command("backend").description(
@@ -124,6 +142,41 @@ export function createBackendCommand(): Command {
           type: "single" as const,
           schema,
           data: { id, type: "removed", restartRequired: true },
+        };
+      },
+    ),
+  );
+  addJsonOption(
+    command
+      .command("diagnostic")
+      .description("Read backend connectivity, provider availability and capabilities")
+      .argument("<id>"),
+  ).action(
+    withOutput(
+      async (
+        id: string,
+        options: CommandOptions,
+        _command: Command,
+      ): Promise<ListResult<DiagnosticRow>> => {
+        let snapshot;
+        if (id === "local") {
+          const client = await connectToDaemon({ host: options.host });
+          try {
+            snapshot = await client.getProvidersSnapshot();
+          } finally {
+            await client.close();
+          }
+        } else snapshot = await diagnoseExecutionBackend(resolvePaseoHome(), id);
+        return {
+          type: "list",
+          schema: diagnosticSchema,
+          data: snapshot.entries.map((entry) => ({
+            backend: id,
+            provider: entry.provider,
+            status: entry.status,
+            models: entry.models?.length ?? 0,
+            exactMcpPreapproval: entry.supportsExactMcpPreapproval ?? false,
+          })),
         };
       },
     ),

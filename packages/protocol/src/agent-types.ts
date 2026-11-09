@@ -103,6 +103,7 @@ export function normalizeAgentModelDefinition(model: AgentModelDefinition): Agen
 }
 
 export interface ProviderSnapshotEntry {
+  supportsExactMcpPreapproval?: boolean;
   provider: AgentProvider;
   status: ProviderStatus;
   enabled: boolean;

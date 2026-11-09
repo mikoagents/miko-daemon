@@ -1,3 +1,4 @@
+import { diagnoseExecutionBackend } from "./diagnostic.js";
 import { EventEmitter } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -59,6 +60,7 @@ class NativeService {
   sends = 0;
   unknownSubmit = false;
   readonly snapshots = new Map<string, unknown>();
+  capabilities = true;
   attach(socket: WebSocketLike) {
     socket.on("message", (raw) => {
       const request = z
@@ -71,6 +73,12 @@ class NativeService {
       if (type === "create_agent_request") {
         this.creates++;
         result["agent"] = { id: "native-agent", workspaceId: "native-workspace", status: "idle" };
+      }
+      if (type === "get_providers_snapshot_request") {
+        result["entries"] = [
+          { provider: "codex", status: "ready", supportsExactMcpPreapproval: true },
+        ];
+        result["generatedAt"] = new Date().toISOString();
       }
       if (type === "fetch_agent_request")
         result["agent"] = { id: "native-agent", workspaceId: "native-workspace", status: "idle" };
@@ -98,7 +106,7 @@ class NativeService {
           type: "status",
           payload: {
             status: "server_info",
-            features: { hubAgentRpc: true, agentRequestReceipts: true },
+            features: { hubAgentRpc: this.capabilities, agentRequestReceipts: this.capabilities },
           },
         },
       }),
@@ -109,12 +117,12 @@ async function fixture(permissions: readonly string[] = ["hub.execute"]) {
   const home = await mkdtemp(join(tmpdir(), "miko-service-test-"));
   cleanups.push(() => rm(home, { recursive: true, force: true }));
   const native = new NativeService();
-  function connect() {
+  function connect(daemonId = "registered-hub") {
     const socket = new HubSocket(),
       service = new ExecutionService({
         socket,
         home,
-        daemonId: "registered-hub",
+        daemonId,
         permissions,
         attachLocal: async (value) => {
           expect(value).toBeInstanceOf(LocalBackendSocket);
@@ -228,9 +236,13 @@ test("existing Paseo service owns execution through an authenticated native adap
   const address = server.address();
   if (typeof address === "string") throw new Error("invalid address");
   let authorization: unknown;
+  const clientIds: string[] = [];
   server.on("connection", (socket, request) => {
     authorization = request.headers.authorization;
-    socket.once("message", () => f.native.attach(socket as unknown as WebSocketLike));
+    socket.once("message", (raw) => {
+      clientIds.push(z.object({ clientId: z.string() }).parse(JSON.parse(raw.toString())).clientId);
+      f.native.attach(socket as unknown as WebSocketLike);
+    });
   });
   await writeFile(
     join(f.home, "miko-backends.json"),
@@ -249,8 +261,19 @@ test("existing Paseo service owns execution through an authenticated native adap
     nativeAgentId: "native-agent",
   });
   expect(authorization).toBe("Bearer service-token");
-  expect(f.native.creates).toBe(1);
+  const second = f.connect("other-hub");
+  await second.socket.request("create", {
+    key: "second-session",
+    options: { ...options, backend: "existing" },
+  });
+  expect(clientIds).toEqual(["miko:registered-hub:existing", "miko:other-hub:existing"]);
+  expect(f.native.creates).toBe(2);
   expect(JSON.stringify(socket.messages)).not.toContain("service-token");
+  expect((await diagnoseExecutionBackend(f.home, "existing")).entries).toMatchObject([
+    { provider: "codex", status: "ready", supportsExactMcpPreapproval: true },
+  ]);
+  expect(f.native.creates).toBe(2);
+  expect(clientIds[2]).toMatch(/^miko:diagnostic:/);
 });
 test("reusing a request key across backends fails and missing capabilities never fall back to local", async () => {
   const f = await fixture(),
@@ -292,4 +315,15 @@ test("cancellation and cleanup persist stable execution keys and reject mismatch
   expect(
     f.native.requests.filter((request) => request["type"] === "archive_workspace_request"),
   ).toHaveLength(1);
+});
+
+test("missing native capabilities produce a response without prematurely closing the Hub connection", async () => {
+  const f = await fixture();
+  f.native.capabilities = false;
+  const { socket } = f.connect();
+  expect((await socket.request("create", { key: "session", options })).error?.code).toBe(
+    "backend_capabilities_unsupported",
+  );
+  expect(socket.readyState).toBe(1);
+  expect(f.native.creates).toBe(0);
 });

@@ -5,7 +5,7 @@
 ### Added
 
 - Miko CLI, isolated daemon state and release artifacts under `@mikoagents/*`, retaining the Paseo supervisor and provider architecture.
-- Versioned Hub execution protocol with local and existing Paseo backends, persistent session bindings and replay-safe request receipts.
+- Versioned Hub execution protocol with local and existing Paseo backends, persistent session bindings, isolated backend client identities, read-only diagnostics and replay-safe request receipts.
 
 ## 0.8.0-beta.1 - 2026-09-08
 

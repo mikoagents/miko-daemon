@@ -110,6 +110,7 @@ export class ExecutionService {
     if (!connection) {
       connection = openBackend({
         id,
+        clientId: `miko:${this.options.daemonId}:${id}`,
         config: await this.config,
         onClose: () => {
           if (!this.closed) this.options.socket.close(1012, "backend disconnected");

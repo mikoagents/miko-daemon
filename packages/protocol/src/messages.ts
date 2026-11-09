@@ -370,6 +370,7 @@ const AgentModelDefinitionSchema = z.object({
 }) satisfies z.ZodType<AgentModelDefinition>;
 
 export const ProviderSnapshotEntrySchema = z.object({
+  supportsExactMcpPreapproval: z.boolean().optional(),
   provider: AgentProviderSchema,
   status: ProviderStatusSchema,
   enabled: z.boolean().optional().default(true),
@@ -1139,7 +1140,6 @@ export const ForgeIssueAttachmentSchema = z.object({
 });
 
 export const ExternalResourceAttachmentMetadataSchema = z.object({
-  supportsExactMcpPreapproval: z.boolean().optional(),
   provider: z.string(),
   providerLabel: z.string(),
   resourceType: z.string(),

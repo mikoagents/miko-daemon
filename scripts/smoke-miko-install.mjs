@@ -40,6 +40,13 @@ try {
   assert.match(status, /running/);
   const backends = JSON.parse(await run(cli, ["backend", "ls", "--json"]));
   assert.deepEqual(backends, [{ id: "local", type: "local" }]);
+  const diagnostic = JSON.parse(await run(cli, ["backend", "diagnostic", "local", "--json"]));
+  assert(diagnostic.length > 0);
+  assert(
+    diagnostic.every(
+      (entry) => entry.backend === "local" && typeof entry.exactMcpPreapproval === "boolean",
+    ),
+  );
   await run(cli, ["daemon", "stop", "--json"]);
   started = false;
   process.stdout.write(
