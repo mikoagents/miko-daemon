@@ -6,13 +6,13 @@ Configure a native Paseo service explicitly:
 ```sh
 miko backend add workstation --url wss://example.test/ws --token-file /private/paseo-token
 miko backend ls --json
-miko daemon reload
+miko daemon restart
 ```
 
 Use the remote service's own bearer credential. Miko's Hub credential does not authenticate
 against that service. The configuration is private at `$MIKO_HOME/miko-backends.json`;
 keep it outside repositories. Listing and execution responses omit credentials.
-A backend name cannot be replaced in place: remove and add deliberately, then reload.
+A backend name cannot be replaced in place: remove and add deliberately, then restart.
 An existing session rejects a changed backend endpoint or credential binding.
 
 Set `run.agent.backend: workstation` in Hub's trigger YAML, or enter the ID in the form.

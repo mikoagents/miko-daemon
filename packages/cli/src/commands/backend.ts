@@ -38,7 +38,7 @@ interface BackendRow {
   id: string;
   type: string;
   url?: string;
-  reloadRequired?: boolean;
+  restartRequired?: boolean;
 }
 const schema: OutputSchema<BackendRow> = {
   idField: "id",
@@ -53,7 +53,7 @@ const schema: OutputSchema<BackendRow> = {
 };
 export function createBackendCommand(): Command {
   const command = new Command("backend").description(
-    "Configure Hub execution backends (reload daemon after changes)",
+    "Configure Hub execution backends (restart daemon after changes)",
   );
   addJsonOption(command.command("ls")).action(
     withOutput(
@@ -104,7 +104,7 @@ export function createBackendCommand(): Command {
         return {
           type: "single" as const,
           schema,
-          data: { id, type: "paseo", reloadRequired: true },
+          data: { id, type: "paseo", restartRequired: true },
         };
       },
     ),
@@ -123,7 +123,7 @@ export function createBackendCommand(): Command {
         return {
           type: "single" as const,
           schema,
-          data: { id, type: "removed", reloadRequired: true },
+          data: { id, type: "removed", restartRequired: true },
         };
       },
     ),
