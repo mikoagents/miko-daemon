@@ -19,15 +19,32 @@ import { ensureUnarchivedAgentLoaded } from "../agent/agent-loading.js";
 import { sendPromptToAgent } from "../agent/agent-prompt.js";
 import { serializeAgentSnapshot, serializeAgentStreamEvent } from "../messages.js";
 import { buildStoredAgentPayload } from "../agent/agent-projections.js";
-import type { AgentConnection, AgentEvent, AgentSnapshot } from "./paseo-backend.js";
+type AgentSnapshot = Pick<
+  import("@mikoagents/execution-protocol").AgentSnapshot,
+  "id" | "workspaceId" | "status" | "archivedAt"
+>;
+export type ProviderExecutionEvent =
+  | { type: "agent_update" | "agent_snapshot"; agent: AgentSnapshot; timestamp: string }
+  | {
+      type: "agent_stream";
+      agentId: string;
+      event: import("@mikoagents/execution-protocol").HubExecutionAgentStreamEvent;
+      timestamp: string;
+    };
 
-export interface ExecutionBackend extends AgentConnection {
+export interface ExecutionRuntime {
+  create(key: string, options: CreateOptions): Promise<AgentSnapshot>;
+  get(agentId: string): Promise<AgentSnapshot>;
+  send(agentId: string, messageId: string, text: string): Promise<void>;
+  restore(workspaceId: string): Promise<boolean>;
+  control(agentId: string, workspaceId: string, action: "interrupt" | "archive"): Promise<void>;
+  watch(agentId: string, listener: (event: ProviderExecutionEvent) => void): Promise<() => void>;
   providers(options: { cwd?: string }): Promise<HubProviderSnapshot>;
   refresh(options: { cwd?: string; providers?: string[] }): Promise<void>;
   setAuthority?(enabled: boolean): void;
   validate(options: z.infer<typeof ValidationSchema>): Promise<unknown>;
 }
-export interface LocalBackendOptions {
+export interface ProviderExecutionOptions {
   requests: AgentRequests;
   cleanupFailedCreate(worktree: CreatePaseoWorktreeWorkflowResult): Promise<void>;
   ownerId: string;
@@ -42,10 +59,10 @@ export interface LocalBackendOptions {
 }
 
 /** Uses the existing provider/session owner directly; no native socket or product server. */
-export class LocalBackend implements ExecutionBackend {
+export class ProviderExecution implements ExecutionRuntime {
   private generation = 0;
   private authorized = true;
-  constructor(private readonly options: LocalBackendOptions) {}
+  constructor(private readonly options: ProviderExecutionOptions) {}
   setAuthority(enabled: boolean): void {
     if (this.authorized !== enabled) {
       this.authorized = enabled;
@@ -225,7 +242,10 @@ export class LocalBackend implements ExecutionBackend {
     else if (this.options.agentManager.getAgent(agentId))
       await this.options.agentManager.cancelAgentRun(agentId);
   }
-  async watch(agentId: string, listener: (event: AgentEvent) => void): Promise<() => void> {
+  async watch(
+    agentId: string,
+    listener: (event: ProviderExecutionEvent) => void,
+  ): Promise<() => void> {
     await this.requireOwned(agentId);
     const unsubscribe = this.options.agentManager.subscribe((event) => {
       if (event.type === "agent_state" && event.agent.id === agentId) {

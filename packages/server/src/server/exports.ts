@@ -1,4 +1,3 @@
-export { diagnoseExecutionBackend } from "./miko/diagnostic.js";
 // CLI exports for @getpaseo/server
 export { createPaseoDaemon, type PaseoDaemon, type PaseoDaemonConfig } from "./bootstrap.js";
 export { loadConfig, type CliConfigOverrides } from "./config.js";

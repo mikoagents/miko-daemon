@@ -9,12 +9,18 @@ test("the public execution version is exact and independent of native protocol v
   const request = {
     type: "miko.request",
     version,
-    operation: "discover",
+    operation: "providers",
     requestId: "request",
     input: {},
   };
   expect(RequestSchema.safeParse(request).success).toBe(true);
   expect(RequestSchema.safeParse({ ...request, version: 1 }).success).toBe(false);
+  expect(RequestSchema.safeParse({ ...request, version: "1.0.0" }).success).toBe(false);
+  expect(RequestSchema.safeParse({ ...request, operation: "discover" }).success).toBe(false);
+  for (const operation of ["providers", "refresh"])
+    expect(
+      RequestSchema.safeParse({ ...request, operation, input: { backend: "local" } }).success,
+    ).toBe(false);
   expect(
     AgentSnapshotSchema.safeParse({ id: "session", workspaceId: "workspace", status: "idle" })
       .success,
@@ -22,7 +28,6 @@ test("the public execution version is exact and independent of native protocol v
 });
 test("custom provider options and every supported worktree mode survive schema validation", () => {
   const options = {
-    backend: "remote",
     provider: "profile",
     cwd: "/repo",
     env: { TASK: "value" },
@@ -31,4 +36,5 @@ test("custom provider options and every supported worktree mode survive schema v
     worktree: { mode: "checkout-pr", prNumber: 42 },
   };
   expect(CreateOptionsSchema.parse(options)).toEqual(options);
+  expect(CreateOptionsSchema.safeParse({ ...options, backend: "local" }).success).toBe(false);
 });

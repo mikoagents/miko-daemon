@@ -7,57 +7,47 @@ import {
   HelloSchema,
   CreateOptionsSchema,
   ValidationSchema,
-  BackendIdSchema,
   type ExecutionRequest,
   type AgentSnapshot,
 } from "@mikoagents/execution-protocol";
 import { writePrivateFileAtomicSync } from "../private-files.js";
 import type { WebSocketLike } from "../websocket-server.js";
-import type { ExecutionBackend } from "./local-backend.js";
+import type { ExecutionRuntime } from "./provider-execution.js";
 import { digest, RequestJournal } from "./journal.js";
-import { openBackend, readBackends, type BackendConnection, type Backends } from "./backends.js";
 
 const BindingSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
-  backend: BackendIdSchema,
   provider: z.string(),
   nativeAgentId: z.string(),
   nativeWorkspaceId: z.string(),
-  backendFingerprint: z.string(),
 });
 type Binding = z.infer<typeof BindingSchema>;
 const IdentitySchema = z.object({ agentId: z.string() });
-const BackendOptionsSchema = z.object({
-  backend: BackendIdSchema.default("local"),
+const ProviderOptionsSchema = z.object({
   cwd: z.string().optional(),
   providers: z.array(z.string()).optional(),
 });
 
 export class ExecutionService {
   private readonly journal: RequestJournal;
-  private readonly backends = new Map<string, Promise<BackendConnection>>();
   private readonly watchers = new Map<string, () => void>();
   private closed = false;
   private readonly pending = new Set<Promise<unknown>>();
   private ready = false;
   private readonly directory: string;
-  private readonly config: Promise<Backends>;
   constructor(
     private readonly options: {
       socket: WebSocketLike;
       home: string;
       daemonId: string;
       permissions: readonly string[];
-      localBackend?: ExecutionBackend;
+      execution: ExecutionRuntime;
     },
   ) {
-    options.localBackend?.setAuthority?.(options.permissions.includes("hub.execute"));
+    options.execution.setAuthority?.(options.permissions.includes("hub.execute"));
     this.directory = join(options.home, "miko", digest(options.daemonId));
     this.journal = new RequestJournal(join(this.directory, "requests"));
-    this.config = readBackends(options.home);
-    // Attach the rejection handler before any network message can arrive.
-    void this.config.catch(() => options.socket.close(1011, "invalid backend configuration"));
     options.socket.on("message", (data) => {
       const request = this.receive(data);
       this.pending.add(request);
@@ -69,7 +59,7 @@ export class ExecutionService {
   }
   updatePermissions(permissions: readonly string[]): void {
     this.options.permissions = permissions;
-    this.options.localBackend?.setAuthority?.(permissions.includes("hub.execute"));
+    this.options.execution.setAuthority?.(permissions.includes("hub.execute"));
     if (!permissions.includes("hub.execute")) {
       for (const unsubscribe of this.watchers.values()) unsubscribe();
       this.watchers.clear();
@@ -80,7 +70,7 @@ export class ExecutionService {
   }
   async retireAuthority(): Promise<void> {
     this.options.permissions = [];
-    this.options.localBackend?.setAuthority?.(false);
+    this.options.execution.setAuthority?.(false);
     await Promise.allSettled(this.pending);
   }
   private send(message: unknown): void {
@@ -116,7 +106,7 @@ export class ExecutionService {
       const message =
         error instanceof Error && KNOWN_ERRORS.has(error.message)
           ? error.message
-          : "backend_request_failed";
+          : "execution_request_failed";
       this.send({
         type: "miko.response",
         version,
@@ -124,23 +114,6 @@ export class ExecutionService {
         error: { code: message, message },
       });
     }
-  }
-  private async backend(id: string): Promise<BackendConnection> {
-    let connection = this.backends.get(id);
-    if (!connection) {
-      connection = openBackend({
-        id,
-        clientId: `miko:${this.options.daemonId}:${id}`,
-        config: await this.config,
-        onClose: () => {
-          if (!this.closed) this.options.socket.close(1012, "backend disconnected");
-        },
-        localBackend: this.options.localBackend,
-      });
-      this.backends.set(id, connection);
-      void connection.catch(() => this.backends.delete(id));
-    }
-    return connection;
   }
   private async binding(id: string): Promise<Binding> {
     let stored: string;
@@ -151,14 +124,7 @@ export class ExecutionService {
         throw new Error("session_not_found", { cause: error });
       throw error;
     }
-    const binding = BindingSchema.parse(JSON.parse(stored));
-    const config = await this.config;
-    if (
-      binding.backendFingerprint !==
-      digest(binding.backend === "local" ? "local" : config[binding.backend])
-    )
-      throw new Error("backend_changed");
-    return binding;
+    return BindingSchema.strict().parse(JSON.parse(stored));
   }
   private snapshot(
     binding: Binding,
@@ -167,7 +133,6 @@ export class ExecutionService {
     return {
       id: binding.id,
       workspaceId: binding.workspaceId,
-      backend: binding.backend,
       provider: binding.provider,
       nativeAgentId: binding.nativeAgentId,
       status: native.status,
@@ -176,24 +141,16 @@ export class ExecutionService {
   }
   private async dispatch(request: ExecutionRequest): Promise<unknown> {
     const input = request.input;
-    if (request.operation === "discover")
-      return {
-        backends: [
-          { id: "local", type: "local" },
-          ...Object.keys(await this.config).map((id) => ({ id, type: "paseo" })),
-        ],
-      };
     if (request.operation === "receipt")
       return this.journal.receipt(z.object({ key: z.string() }).parse(input).key);
     if (["providers", "refresh", "validate"].includes(request.operation)) {
-      const options = BackendOptionsSchema.parse(input),
-        { backend } = await this.backend(options.backend);
-      if (request.operation === "providers") return backend.providers(options);
+      const options = ProviderOptionsSchema.parse(input);
+      if (request.operation === "providers") return this.options.execution.providers(options);
       if (request.operation === "refresh") {
-        await backend.refresh(options);
+        await this.options.execution.refresh(options);
         return null;
       }
-      return backend.validate(ValidationSchema.parse(input));
+      return this.options.execution.validate(ValidationSchema.parse(input));
     }
     if (request.operation === "create") {
       const { key, options } = z
@@ -203,20 +160,18 @@ export class ExecutionService {
         `create:${key}`,
         options,
         async () => {
-          const { backend } = await this.backend(options.backend);
-          const native = await backend.create(`${this.options.daemonId}:${key}`, options);
+          const native = await this.options.execution.create(
+            `${this.options.daemonId}:${key}`,
+            options,
+          );
           const id = digest(["agent", key]),
             workspaceId = digest(["workspace", key]);
           const binding: Binding = {
             id,
             workspaceId,
-            backend: options.backend,
             provider: options.provider,
             nativeAgentId: native.id,
             nativeWorkspaceId: native.workspaceId,
-            backendFingerprint: digest(
-              options.backend === "local" ? "local" : (await this.config)[options.backend],
-            ),
           };
           writePrivateFileAtomicSync(
             join(this.directory, "sessions", `${digest(id)}.json`),
@@ -236,21 +191,19 @@ export class ExecutionService {
       return this.journal.execute(
         `restore:${z.object({ key: z.string() }).parse(input).key}`,
         input,
-        async () =>
-          (await this.backend(binding.backend)).backend.restore(binding.nativeWorkspaceId),
+        async () => this.options.execution.restore(binding.nativeWorkspaceId),
       );
     }
     const { agentId } = IdentitySchema.parse(input),
-      binding = await this.binding(agentId),
-      { backend } = await this.backend(binding.backend);
+      binding = await this.binding(agentId);
     if (request.operation === "get")
-      return this.snapshot(binding, await backend.get(binding.nativeAgentId));
+      return this.snapshot(binding, await this.options.execution.get(binding.nativeAgentId));
     if (request.operation === "submit") {
       const { messageId, text } = z
         .object({ messageId: z.string(), text: z.string() })
         .parse(input);
       return this.journal.execute(`submit:${agentId}:${messageId}`, input, async () => {
-        await backend.send(binding.nativeAgentId, messageId, text);
+        await this.options.execution.send(binding.nativeAgentId, messageId, text);
         return null;
       });
     }
@@ -261,7 +214,7 @@ export class ExecutionService {
         `${request.operation}:${z.object({ key: z.string() }).parse(input).key}`,
         input,
         async () => {
-          await backend.control(
+          await this.options.execution.control(
             binding.nativeAgentId,
             binding.nativeWorkspaceId,
             request.operation === "cancel" ? "interrupt" : "archive",
@@ -277,7 +230,7 @@ export class ExecutionService {
     }
     if (request.operation === "watch") {
       this.watchers.get(agentId)?.();
-      const unsubscribe = await backend.watch(binding.nativeAgentId, (event) => {
+      const unsubscribe = await this.options.execution.watch(binding.nativeAgentId, (event) => {
         const translated =
           event.type === "agent_stream"
             ? { ...event, agentId }
@@ -296,25 +249,14 @@ export class ExecutionService {
     this.closed = true;
     for (const unsubscribe of this.watchers.values()) unsubscribe();
     this.watchers.clear();
-    for (const connection of this.backends.values())
-      void connection.then(
-        (value) => value.close(),
-        () => {},
-      );
-    this.backends.clear();
   }
 }
 
 const KNOWN_ERRORS = new Set([
   "execution_not_allowed",
-  "backend_not_found",
-  "backend_changed",
   "request_key_conflict",
   "request_outcome_unknown",
   "session_binding_mismatch",
   "session_not_found",
   "operation_unsupported",
-  "backend_capabilities_unsupported",
-  "backend_disconnected",
-  "backend_handshake_timeout",
 ]);

@@ -29,14 +29,14 @@ Deleted product source remains in Git history. Keep provider/session/storage/sup
 symbols stable; adapt provider changes at the narrow bootstrap/execution boundary.
 
 Local execution directly composes the inherited agent manager, request receipts, worktrees and
-recovery services. Existing Paseo services use the native adapter. There is no virtual native
+recovery services. There is no virtual native
 socket, interactive product session or second process supervisor. Internal package names remain
 private; `pack:miko` maps staged files to `@mikoagents/*`.
 
 The repository intentionally drops all product application, speech, relay, plugin host, browser,
 terminal UI, resident schedule/heartbeat, script proxy and related release/tooling trees. Do not
 resolve an upstream conflict by bringing these trees back. Native schemas remain a compatibility
-boundary for parsing existing services, rather than enabling those products.
+boundary for local management and providers, rather than enabling those products.
 
 Miko defaults to `~/.miko` and port 7767. Development commands use `.dev/miko-home` on port 7768
 without copying credentials or state from an existing Paseo home.

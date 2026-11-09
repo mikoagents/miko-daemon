@@ -7,7 +7,8 @@ import { WebSocket } from "ws";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { createPaseoDaemon } from "../bootstrap.js";
 import { createTestAgentClient } from "../test-utils/fake-agent-client.js";
-import { openBackend } from "./backends.js";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { AgentPromptInput } from "../agent/agent-sdk-types.js";
 
 // Exercises the real composition and inherited manager/storage, with only provider IO replaced.
@@ -24,39 +25,88 @@ test("headless runtime preserves keyed creation, exact prompts, native timeline 
     },
   };
   let daemon = await createPaseoDaemon(config, pino({ level: "silent" }));
-  let connection: Awaited<ReturnType<typeof openBackend>> | undefined;
+  let connection: Awaited<ReturnType<typeof connect>> | undefined;
   let client: DaemonClient | undefined;
   const connect = async () => {
     const target = daemon.getListenTarget();
     if (!target || target.type !== "tcp") throw new Error("TCP listener required");
-    return openBackend({
-      id: "native",
-      clientId: "test-owner",
-      config: { native: { type: "paseo", url: `ws://127.0.0.1:${target.port}/ws`, token: "test" } },
-      onClose() {},
+    const socket = new WebSocket(`ws://127.0.0.1:${target.port}/ws`);
+    const ready = new Promise<void>((resolve) => socket.once("message", () => resolve()));
+    socket.on("open", () =>
+      socket.send(
+        JSON.stringify({
+          type: "hello",
+          clientId: "test-owner",
+          clientType: "cli",
+          protocolVersion: 1,
+        }),
+      ),
+    );
+    await ready;
+    const request = (type: string, fields: Record<string, unknown>) =>
+      new Promise<Record<string, unknown>>((resolve, reject) => {
+        const requestId = randomUUID();
+        const timer = setTimeout(() => {
+          socket.off("message", onMessage);
+          reject(new Error("Native test request timed out"));
+        }, 10_000);
+        const onMessage = (raw: Buffer) => {
+          const frame = z
+            .object({ message: z.object({ payload: z.record(z.string(), z.unknown()) }) })
+            .parse(JSON.parse(raw.toString()));
+          if (frame.message.payload["requestId"] !== requestId) return;
+          clearTimeout(timer);
+          socket.off("message", onMessage);
+          if (frame.message.payload["error"])
+            reject(new Error(String(frame.message.payload["error"])));
+          else resolve(frame.message.payload);
+        };
+        socket.on("message", onMessage);
+        socket.send(JSON.stringify({ type: "session", message: { type, requestId, ...fields } }));
+      });
+    const snapshot = z.object({
+      id: z.string(),
+      workspaceId: z.string(),
+      status: z.string(),
+      archivedAt: z.unknown().optional(),
     });
+    return {
+      create: async (key: string) =>
+        snapshot.parse(
+          (
+            await request("create_agent_request", {
+              idempotencyKey: key,
+              config: { provider: "codex", cwd: home, toolPolicy: { preapproved: [] } },
+              env: {},
+            })
+          )["agent"],
+        ),
+      get: async (id: string) =>
+        snapshot.parse((await request("fetch_agent_request", { agentId: id }))["agent"]),
+      send: async (id: string, messageId: string, text: string) => {
+        await request("send_agent_message_request", { agentId: id, messageId, text });
+      },
+      archive: async (workspaceId: string) => {
+        await request("archive_workspace_request", { workspaceId });
+      },
+      restore: async (workspaceId: string) =>
+        (await request("workspace.recovery.restore.request", { workspaceId }))["accepted"],
+      close: () => socket.close(),
+    };
   };
   try {
     await daemon.start();
     connection = await connect();
-    const options = {
-      backend: "local",
-      provider: "codex",
-      cwd: home,
-      env: {},
-      toolPolicy: { preapproved: [] },
-    };
-    const first = await connection.backend.create("stable", options);
-    expect((await connection.backend.create("stable", options)).id).toBe(first.id);
+    const first = await connection.create("stable");
+    expect((await connection.create("stable")).id).toBe(first.id);
     expect(daemon.agentManager.listAgents()).toHaveLength(1);
-    const unwatch = await connection.backend.watch(first.id, () => {});
     const prompt = "  Author prompt\nNo injected context.  ";
-    await connection.backend.send(first.id, "message-1", prompt);
+    await connection.send(first.id, "message-1", prompt);
     await expect.poll(() => prompts.length).toBe(1);
     expect(prompts[0]).toBe(prompt);
-    await connection.backend.send(first.id, "message-1", prompt);
+    await connection.send(first.id, "message-1", prompt);
     expect(prompts).toHaveLength(1);
-    await expect.poll(async () => (await connection!.backend.get(first.id)).status).toBe("idle");
+    await expect.poll(async () => (await connection!.get(first.id)).status).toBe("idle");
     const target = daemon.getListenTarget();
     if (!target || target.type !== "tcp") throw new Error("TCP listener required");
     client = new DaemonClient({
@@ -79,19 +129,18 @@ test("headless runtime preserves keyed creation, exact prompts, native timeline 
     ).toBe(true);
     await client.close();
     client = undefined;
-    await connection.backend.control(first.id, first.workspaceId, "archive");
-    expect((await connection.backend.get(first.id)).archivedAt).toBeTruthy();
-    expect(await connection.backend.restore(first.workspaceId)).toBe(true);
-    expect((await connection.backend.get(first.id)).archivedAt).toBeNull();
-    unwatch();
+    await connection.archive(first.workspaceId);
+    expect((await connection.get(first.id)).archivedAt).toBeTruthy();
+    expect(await connection.restore(first.workspaceId)).toBe(true);
+    expect((await connection.get(first.id)).archivedAt).toBeNull();
     connection.close();
     connection = undefined;
     await daemon.stop();
     daemon = await createPaseoDaemon(config, pino({ level: "silent" }));
     await daemon.start();
     connection = await connect();
-    expect((await connection.backend.create("stable", options)).id).toBe(first.id);
-    await connection.backend.send(first.id, "message-1", prompt);
+    expect((await connection.create("stable")).id).toBe(first.id);
+    await connection.send(first.id, "message-1", prompt);
     expect(prompts).toHaveLength(1);
   } finally {
     await client?.close();
@@ -102,7 +151,7 @@ test("headless runtime preserves keyed creation, exact prompts, native timeline 
 }, 30_000);
 
 test("revocation during creation closes the admitted provider session and removes persisted authority", async () => {
-  const { LocalBackend } = await import("./local-backend.js");
+  const { ProviderExecution } = await import("./provider-execution.js");
   const { AgentManager } = await import("../agent/agent-manager.js");
   const { AgentStorage } = await import("../agent/agent-storage.js");
   const { buildProviderRegistry } = await import("../agent/provider-registry.js");
@@ -135,7 +184,7 @@ test("revocation during creation closes the admitted provider session and remove
   const gate = new Promise<void>((resolve) => {
     proceed = resolve;
   });
-  const backend = new LocalBackend({
+  const execution = new ProviderExecution({
     ownerId: "hub-owner",
     requests: new AgentRequests(join(home, "requests")),
     agentManager: manager,
@@ -164,15 +213,14 @@ test("revocation during creation closes the admitted provider session and remove
     logger,
   });
   try {
-    const result = backend.create("pending", {
-      backend: "local",
+    const result = execution.create("pending", {
       provider: "codex",
       cwd: home,
       env: {},
       toolPolicy: { preapproved: [] },
     });
     await started;
-    backend.setAuthority(false);
+    execution.setAuthority(false);
     proceed();
     await expect(result).rejects.toThrow("execution_not_allowed");
     expect(manager.listAgents()).toHaveLength(0);

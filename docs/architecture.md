@@ -8,28 +8,27 @@ retains its process lock, IPC, worker heartbeat, crash restart and graceful shut
 `bootstrap.ts` composes provider discovery, `AgentManager`, `AgentStorage`, the native
 worktree/registry/recovery modules, Hub relationship management and execution connections.
 
-Local execution calls `miko/local-backend.ts` directly. There is one provider/session owner;
+Local execution calls `miko/provider-execution.ts` directly. There is one provider/session owner;
 local requests do not loop through a virtual socket or instantiate an interactive Paseo session.
-The public service journals requests and binds each session to its enrolled Hub, backend,
+The public service journals requests and binds each session to its enrolled Hub,
 provider and native reference. Provider adapters keep their native permissions and MCP behavior.
 
-`miko/paseo-backend.ts` translates the same execution operations to a configured existing
-Paseo service. The remote service owns its sessions and processes. The local `/ws` endpoint
+Miko executes through its own provider/session manager. The local `/ws` endpoint
 provides only direct management, provider discovery and the execution RPC subset. Removed
 operations return an explicit unsupported error. Reload validates configuration and reports
 restart requirements; it does not partially reconfigure a running provider registry.
 
 ## Package boundary
 
-| Package              | Maintained purpose                                                               |
-| -------------------- | -------------------------------------------------------------------------------- |
-| `cli`                | Daemon lifecycle, provider diagnostics, Hub enrollment and backend configuration |
-| `server`             | Supervision, providers, durable sessions, recovery and execution adapters        |
-| `protocol`           | Inherited wire schemas and native provider/configuration types                   |
-| `client`             | Direct native control, provider discovery, Hub management and timeline reads     |
-| `execution-protocol` | Independent, versioned Hub execution contract                                    |
+| Package              | Maintained purpose                                                           |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `cli`                | Daemon lifecycle, provider diagnostics, Hub enrollment and authorization     |
+| `server`             | Supervision, providers, durable sessions, recovery and execution adapters    |
+| `protocol`           | Inherited wire schemas and native provider/configuration types               |
+| `client`             | Direct native control, provider discovery, Hub management and timeline reads |
+| `execution-protocol` | Independent, versioned Hub execution contract                                |
 
-Native schemas retain upstream wire vocabulary so existing Paseo services can be parsed.
+Native schemas retain upstream wire vocabulary for local management and provider compatibility.
 Schema names do not enable their corresponding product services in Miko. The client SDK
 and server do not ship their terminal, file-browser, plugin, UI, voice or scheduling operations.
 

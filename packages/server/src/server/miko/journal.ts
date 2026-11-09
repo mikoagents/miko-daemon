@@ -20,7 +20,7 @@ export function digest(value: unknown): string {
     )
     .digest("hex");
 }
-/** Persist before invoking the native backend. An unresolved submission is never repeated. */
+/** Persist before invoking the provider runtime. An unresolved submission is never repeated. */
 export class RequestJournal {
   private readonly pending = new Map<string, Promise<unknown>>();
   constructor(private readonly directory: string) {}

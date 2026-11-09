@@ -46,7 +46,7 @@ import {
   type HubRelationshipRemote,
 } from "./hub/relationship-remote.js";
 import { ExecutionService } from "./miko/execution-service.js";
-import { LocalBackend } from "./miko/local-backend.js";
+import { ProviderExecution } from "./miko/provider-execution.js";
 import { ExecutionWebSocketServer } from "./websocket-server.js";
 export type ListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -309,8 +309,8 @@ export async function createPaseoDaemon(
     );
   };
   const requests = new AgentRequests(join(config.paseoHome, "agent-requests"));
-  const localBackend = (ownerId: string) =>
-    new LocalBackend({
+  const providerExecution = (ownerId: string) =>
+    new ProviderExecution({
       requests,
       cleanupFailedCreate: async (worktree) => {
         await deletePaseoWorktree({
@@ -357,7 +357,7 @@ export async function createPaseoDaemon(
         home: config.paseoHome,
         daemonId: options.daemonId,
         permissions: options.permissions,
-        localBackend: localBackend(options.daemonId),
+        execution: providerExecution(options.daemonId),
       });
       services.set(options.principalId, service);
       allServices.add(service);
@@ -391,7 +391,7 @@ export async function createPaseoDaemon(
     agentStorage,
     providers: runtime.snapshotManager,
     hubRelationships,
-    localBackend,
+    providerExecution,
     workspaceRegistry,
     recovery,
     logger,

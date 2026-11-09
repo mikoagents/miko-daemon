@@ -1,13 +1,12 @@
-import { diagnoseExecutionBackend } from "./diagnostic.js";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { z } from "zod";
-import { WebSocketServer } from "ws";
 import { ExecutionService } from "./execution-service.js";
-import { PaseoBackend } from "./paseo-backend.js";
+import type { ExecutionRuntime, ProviderExecutionEvent } from "./provider-execution.js";
+import type { CreateOptions } from "@mikoagents/execution-protocol";
 import type { WebSocketLike } from "../websocket-server.js";
 import {
   RequestSchema,
@@ -20,19 +19,6 @@ const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).toReversed()) await cleanup();
 });
-class TestNativeSocket extends EventEmitter implements WebSocketLike {
-  readyState = 1;
-  constructor(private readonly receive: (value: unknown) => void) {
-    super();
-  }
-  send(data: string | Uint8Array | ArrayBuffer): void {
-    this.receive(JSON.parse(String(data)));
-  }
-  close(): void {
-    this.readyState = 3;
-    this.emit("close");
-  }
-}
 class HubSocket extends EventEmitter implements WebSocketLike {
   readyState = 1;
   readonly messages: unknown[] = [];
@@ -67,84 +53,59 @@ class HubSocket extends EventEmitter implements WebSocketLike {
     return response;
   }
 }
-class NativeService {
-  readonly requests: Record<string, unknown>[] = [];
-  creates = 0;
-  sends = 0;
+class TestExecution implements ExecutionRuntime {
+  readonly creates: CreateOptions[] = [];
+  readonly prompts: string[] = [];
+  readonly controls: string[] = [];
   unknownSubmit = false;
-  readonly snapshots = new Map<string, unknown>();
-  capabilities = true;
-  attach(socket: WebSocketLike) {
-    socket.on("message", (raw) => {
-      const request = z
-        .object({ message: z.record(z.string(), z.unknown()) })
-        .parse(JSON.parse(String(raw))).message;
-      this.requests.push(request);
-      const type = request["type"],
-        requestId = request["requestId"];
-      let result: Record<string, unknown> = { requestId };
-      if (type === "create_agent_request") {
-        this.creates++;
-        result["agent"] = { id: "native-agent", workspaceId: "native-workspace", status: "idle" };
-      }
-      if (type === "get_providers_snapshot_request") {
-        result["entries"] = [
-          { provider: "codex", status: "ready", supportsExactMcpPreapproval: true },
-        ];
-        result["generatedAt"] = new Date().toISOString();
-      }
-      if (type === "fetch_agent_request")
-        result["agent"] = { id: "native-agent", workspaceId: "native-workspace", status: "idle" };
-      if (type === "send_agent_message_request") {
-        this.sends++;
-        if (this.unknownSubmit) {
-          socket.close();
-          return;
-        }
-      }
-      void socket.send(
-        JSON.stringify({
-          type: "session",
-          message: {
-            type: type === "create_agent_request" ? "status" : "response",
-            payload: result,
-          },
-        }),
-      );
-    });
-    void socket.send(
-      JSON.stringify({
-        type: "session",
-        message: {
-          type: "status",
-          payload: {
-            status: "server_info",
-            features: { hubAgentRpc: this.capabilities, agentRequestReceipts: this.capabilities },
-          },
-        },
-      }),
-    );
+  onUnknownSubmit: () => void = () => {};
+  async providers() {
+    return {
+      entries: [{ provider: "codex", status: "ready" as const, supportsExactMcpPreapproval: true }],
+      generatedAt: new Date().toISOString(),
+    };
+  }
+  async refresh() {}
+  async validate() {
+    return { valid: true };
+  }
+  async create(_key: string, options: CreateOptions) {
+    this.creates.push(options);
+    return this.get();
+  }
+  async get() {
+    return { id: "native-agent", workspaceId: "native-workspace", status: "idle" as const };
+  }
+  async send(_id: string, _messageId: string, text: string) {
+    this.prompts.push(text);
+    if (this.unknownSubmit) {
+      this.onUnknownSubmit();
+      throw new Error("request_outcome_unknown");
+    }
+  }
+  async restore() {
+    return true;
+  }
+  async control(_id: string, _workspace: string, action: string) {
+    this.controls.push(action);
+  }
+  async watch(_id: string, _listener: (event: ProviderExecutionEvent) => void) {
+    return () => {};
   }
 }
 async function fixture(permissions: readonly string[] = ["hub.execute"]) {
   const home = await mkdtemp(join(tmpdir(), "miko-service-test-"));
   cleanups.push(() => rm(home, { recursive: true, force: true }));
-  const native = new NativeService();
+  const native = new TestExecution();
   function connect(daemonId = "registered-hub") {
     const socket = new HubSocket();
-    const peer = new TestNativeSocket((value) => backend.receive(value));
-    const backend = new PaseoBackend((frame) => peer.emit("message", frame));
-    peer.on("close", () => {
-      backend.close();
-      socket.close(1012);
-    });
-    native.attach(peer);
+    native.onUnknownSubmit = () => socket.close(1012);
     const service = new ExecutionService({
       socket,
       home,
       daemonId,
       permissions,
-      localBackend: backend,
+      execution: native,
     });
     cleanups.push(async () => socket.close());
     socket.emit("message", JSON.stringify({ type: "miko.hello", version }));
@@ -160,7 +121,7 @@ const options = {
   providerOptions: { sandbox_mode: "read-only" },
   toolPolicy: { preapproved: [{ kind: "mcp", server: "hub", tool: "finish_execution" }] },
 };
-test("execution service preserves backend settings and sends prompt bytes unchanged", async () => {
+test("execution service preserves provider settings and sends prompt bytes unchanged", async () => {
   const f = await fixture(),
     { socket } = f.connect();
   const created = await socket.request("create", { key: "session", options }),
@@ -168,22 +129,11 @@ test("execution service preserves backend settings and sends prompt bytes unchan
   const text = "  User prompt\n".repeat(200);
   await socket.request("submit", { agentId: agent.id, messageId: "execution", text });
   expect(agent).toMatchObject({
-    backend: "local",
     provider: options.provider,
     nativeAgentId: "native-agent",
   });
-  expect(f.native.requests.find((r) => r["type"] === "create_agent_request")).toMatchObject({
-    config: {
-      provider: options.provider,
-      modeId: options.mode,
-      providerOptions: options.providerOptions,
-      toolPolicy: options.toolPolicy,
-    },
-    env: options.env,
-  });
-  expect(f.native.requests.find((r) => r["type"] === "send_agent_message_request")?.["text"]).toBe(
-    text,
-  );
+  expect(f.native.creates).toEqual([options]);
+  expect(f.native.prompts).toEqual([text]);
 });
 test("receipts survive reconnect and daemon restart; replay never creates or submits twice", async () => {
   const f = await fixture();
@@ -197,8 +147,8 @@ test("receipts survive reconnect and daemon restart; replay never creates or sub
     created.result,
   );
   await socket.request("submit", { agentId: agent.id, messageId: "execution", text: "exact" });
-  expect(f.native.creates).toBe(1);
-  expect(f.native.sends).toBe(1);
+  expect(f.native.creates).toHaveLength(1);
+  expect(f.native.prompts).toHaveLength(1);
   expect(
     (
       await socket.request("submit", {
@@ -215,7 +165,7 @@ test("an uncertain submission is retained and never replayed after restart", asy
   const agent = AgentSnapshotSchema.parse(
     (await socket.request("create", { key: "session", options })).result,
   );
-  // Simulate the crash window after the backend accepted work but before its acknowledgement.
+  // Simulate the crash window after the runtime accepted work but before its acknowledgement.
   f.native.unknownSubmit = true;
   void socket.request("submit", { agentId: agent.id, messageId: "execution", text: "exact" });
   await new Promise<void>((resolve) => socket.once("close", () => resolve()));
@@ -226,7 +176,7 @@ test("an uncertain submission is retained and never replayed after restart", asy
     (await socket.request("submit", { agentId: agent.id, messageId: "execution", text: "exact" }))
       .error?.code,
   ).toBe("request_outcome_unknown");
-  expect(f.native.sends).toBe(1);
+  expect(f.native.prompts).toHaveLength(1);
 });
 test("connection authority alone never permits execution, including after revocation", async () => {
   const f = await fixture([]),
@@ -240,75 +190,17 @@ test("connection authority alone never permits execution, including after revoca
   expect((await socket.request("create", { key: "session", options })).error?.code).toBe(
     "execution_not_allowed",
   );
-  expect(f.native.creates).toBe(1);
+  expect(f.native.creates).toHaveLength(1);
 });
-test("existing Paseo service owns execution through an authenticated native adapter", async () => {
-  const f = await fixture(),
-    server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
-  await new Promise<void>((resolve) => server.once("listening", resolve));
-  cleanups.push(async () => {
-    for (const socket of server.clients) socket.terminate();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
-  const address = server.address();
-  if (typeof address === "string") throw new Error("invalid address");
-  let authorization: unknown;
-  const clientIds: string[] = [];
-  server.on("connection", (socket, request) => {
-    authorization = request.headers.authorization;
-    socket.once("message", (raw) => {
-      clientIds.push(z.object({ clientId: z.string() }).parse(JSON.parse(raw.toString())).clientId);
-      f.native.attach(socket as unknown as WebSocketLike);
-    });
-  });
-  await writeFile(
-    join(f.home, "miko-backends.json"),
-    JSON.stringify({
-      existing: { type: "paseo", url: `ws://127.0.0.1:${address.port}`, token: "service-token" },
-    }),
-    { mode: 0o600 },
-  );
-  const { socket } = f.connect(),
-    created = await socket.request("create", {
-      key: "session",
-      options: { ...options, backend: "existing" },
-    });
-  expect(AgentSnapshotSchema.parse(created.result)).toMatchObject({
-    backend: "existing",
-    nativeAgentId: "native-agent",
-  });
-  expect(authorization).toBe("Bearer service-token");
-  const second = f.connect("other-hub");
-  await second.socket.request("create", {
-    key: "second-session",
-    options: { ...options, backend: "existing" },
-  });
-  expect(clientIds).toEqual(["miko:registered-hub:existing", "miko:other-hub:existing"]);
-  expect(f.native.creates).toBe(2);
-  expect(JSON.stringify(socket.messages)).not.toContain("service-token");
-  expect((await diagnoseExecutionBackend(f.home, "existing")).entries).toMatchObject([
-    { provider: "codex", status: "ready", supportsExactMcpPreapproval: true },
-  ]);
-  expect(f.native.creates).toBe(2);
-  expect(clientIds[2]).toMatch(/^miko:diagnostic:/);
-});
-test("reusing a request key across backends fails and missing capabilities never fall back to local", async () => {
+test("removed backend selectors are rejected before provider execution", async () => {
   const f = await fixture(),
     { socket } = f.connect();
-  await socket.request("create", { key: "session", options });
-  expect(
-    (
-      await socket.request("create", {
-        key: "session",
-        options: { ...options, backend: "missing" },
-      })
-    ).error?.code,
-  ).toBe("request_key_conflict");
-  expect(
-    (await socket.request("create", { key: "other", options: { ...options, backend: "missing" } }))
-      .error?.code,
-  ).toBe("backend_not_found");
-  expect(f.native.creates).toBe(1);
+  for (const backend of ["local", "existing"])
+    expect(
+      (await socket.request("create", { key: "session", options: { ...options, backend } })).error
+        ?.code,
+    ).toBe("operation_unsupported");
+  expect(f.native.creates).toHaveLength(0);
 });
 test("cancellation and cleanup persist stable execution keys and reject mismatched workspace references", async () => {
   const f = await fixture();
@@ -321,15 +213,11 @@ test("cancellation and cleanup persist stable execution keys and reject mismatch
   socket.close();
   socket = f.connect().socket;
   await socket.request("cancel", input);
-  expect(
-    f.native.requests.filter((request) => request["type"] === "cancel_agent_request"),
-  ).toHaveLength(1);
+  expect(f.native.controls).toEqual(["interrupt"]);
   expect(
     (await socket.request("cleanup", { ...input, workspaceId: "unrelated" })).error?.code,
   ).toBe("session_binding_mismatch");
   await socket.request("cleanup", input);
   await socket.request("cleanup", input);
-  expect(
-    f.native.requests.filter((request) => request["type"] === "archive_workspace_request"),
-  ).toHaveLength(1);
+  expect(f.native.controls).toEqual(["interrupt", "archive"]);
 });

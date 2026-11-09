@@ -1,3 +1,4 @@
+import { EXECUTION_PROTOCOL_VERSION } from "@mikoagents/execution-protocol";
 import { WebSocket } from "ws";
 import { z } from "zod";
 import type { WebSocketLike } from "../websocket-server.js";
@@ -168,7 +169,7 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
         authorization: `Bearer ${input.credential}`,
         "x-paseo-daemon-id": input.daemonId,
         "x-paseo-session-protocol": "1",
-        "x-miko-execution-protocol": "1.0.0",
+        "x-miko-execution-protocol": EXECUTION_PROTOCOL_VERSION,
       },
     });
     let settled = false;
