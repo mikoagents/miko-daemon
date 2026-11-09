@@ -11,11 +11,6 @@ export interface DaemonStartOptions {
   listen?: string;
   home?: string;
   foreground?: boolean;
-  relay?: boolean;
-  relayUseTls?: boolean;
-  mcp?: boolean;
-  injectMcp?: boolean;
-  webUi?: boolean;
   hostnames?: string;
 }
 
@@ -31,10 +26,6 @@ export interface LocalDaemonPidInfo {
 export interface LocalDaemonState {
   home: string;
   listen: string;
-  relayEnabled: boolean;
-  relayEndpoint: string;
-  relayUseTls: boolean;
-  relayPublicUseTls: boolean;
   logPath: string;
   pidPath: string;
   pidInfo: LocalDaemonPidInfo | null;
@@ -126,34 +117,6 @@ function envWithHome(home?: string): NodeJS.ProcessEnv {
   return { ...process.env, MIKO_HOME: home, PASEO_HOME: home };
 }
 
-function buildRunnerArgs(options: DaemonStartOptions): string[] {
-  const args: string[] = [];
-  if (options.relay === true) {
-    args.push("--relay");
-  }
-  if (options.relay === false) {
-    args.push("--no-relay");
-  }
-  if (options.relayUseTls === true) {
-    args.push("--relay-use-tls");
-  }
-
-  if (options.mcp === false) {
-    args.push("--no-mcp");
-  }
-  if (options.injectMcp === false) {
-    args.push("--no-inject-mcp");
-  }
-  if (options.webUi === true) {
-    args.push("--web-ui");
-  }
-  if (options.webUi === false) {
-    args.push("--no-web-ui");
-  }
-
-  return args;
-}
-
 function buildChildEnv(options: DaemonStartOptions): NodeJS.ProcessEnv {
   const childEnv: NodeJS.ProcessEnv = { ...process.env };
   if (options.home) {
@@ -167,15 +130,6 @@ function buildChildEnv(options: DaemonStartOptions): NodeJS.ProcessEnv {
   }
   if (options.hostnames) {
     childEnv.PASEO_HOSTNAMES = options.hostnames;
-  }
-  if (options.relayUseTls === true) {
-    childEnv.PASEO_RELAY_USE_TLS = "true";
-  }
-  if (options.webUi === true) {
-    childEnv.PASEO_WEB_UI_ENABLED = "true";
-  }
-  if (options.webUi === false) {
-    childEnv.PASEO_WEB_UI_ENABLED = "false";
   }
   return childEnv;
 }
@@ -543,11 +497,6 @@ export function resolveLocalDaemonState(options: { home?: string } = {}): LocalD
     PASEO_LISTEN: undefined,
     PASEO_HOSTNAMES: undefined,
     PASEO_ALLOWED_HOSTS: undefined,
-    PASEO_RELAY_ENABLED: undefined,
-    PASEO_RELAY_ENDPOINT: undefined,
-    PASEO_RELAY_PUBLIC_ENDPOINT: undefined,
-    PASEO_RELAY_USE_TLS: undefined,
-    PASEO_RELAY_PUBLIC_USE_TLS: undefined,
   };
   const home = resolvePaseoHome(env);
   const config = loadConfig(home, { env });
@@ -560,10 +509,6 @@ export function resolveLocalDaemonState(options: { home?: string } = {}): LocalD
   return {
     home,
     listen,
-    relayEnabled: config.relayEnabled ?? true,
-    relayEndpoint: config.relayPublicEndpoint ?? config.relayEndpoint ?? "relay.paseo.sh:443",
-    relayUseTls: config.relayUseTls ?? false,
-    relayPublicUseTls: config.relayPublicUseTls ?? config.relayUseTls ?? false,
     logPath,
     pidPath,
     pidInfo,
@@ -590,16 +535,12 @@ export async function startLocalDaemonDetached(
 
   const paseoHome = runtime.resolveHome(childEnv);
   const logPath = path.join(paseoHome, DAEMON_LOG_FILENAME);
-  const child = runtime.spawnDetached(
-    process.execPath,
-    [...process.execArgv, daemonRunnerEntry, ...buildRunnerArgs(options)],
-    {
-      detached: true,
-      envMode: "internal",
-      env: childEnv,
-      stdio: ["ignore", "ignore", "ignore"],
-    },
-  );
+  const child = runtime.spawnDetached(process.execPath, [...process.execArgv, daemonRunnerEntry], {
+    detached: true,
+    envMode: "internal",
+    env: childEnv,
+    stdio: ["ignore", "ignore", "ignore"],
+  });
 
   child.unref();
 
@@ -658,7 +599,7 @@ export function startLocalDaemonForeground(
   const childEnv = buildChildEnv(options);
   const result = runtime.spawnForeground(
     process.execPath,
-    [...process.execArgv, daemonRunnerEntry, ...buildRunnerArgs(options)],
+    [...process.execArgv, daemonRunnerEntry],
     {
       env: childEnv,
       stdio: "inherit",

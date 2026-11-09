@@ -1,39 +1,45 @@
-# Miko Daemon
+# Miko daemon
 
-Self-hosted agent execution for [Miko Hub](https://github.com/mikoagents/hub), derived from
-[Paseo](https://github.com/getpaseo/paseo). The CLI command is `miko`.
+Miko executes Hub workflows locally or through an existing Paseo service. It derives its
+provider, session, storage and process supervision modules from [Paseo](https://github.com/getpaseo/paseo).
+The upstream history and Apache-2.0 license are retained.
 
-Miko retains Paseo's CLI → supervisor → worker → bootstrap architecture, provider registry,
-native protocol/client, persistence, recovery, MCP and workspace facilities. The first version
-supports local execution and explicitly configured existing Paseo services. The mobile app,
-desktop app, website and T3 integrations are outside the daemon release.
-
-## Build and install
-
-Use Node.js 22 or newer and npm. From a clean checkout:
+Node.js 22 or later is required.
 
 ```sh
 npm ci
 npm run build:miko
 npm run pack:miko
-npm install --global ./artifacts/*.tgz
-miko daemon start
-miko hub login https://your-hub.example
+node scripts/smoke-miko-install.mjs
 ```
 
-The artifacts contain all internal packages under `@mikoagents/*`; installation does not require
-another source checkout or an original Paseo installation. They have not been published to npm.
-Connect-only enrollment does not grant execution. If intended, grant it explicitly:
+`pack:miko` creates five installable `@mikoagents/*` tarballs under `artifacts/`. Install all
+five tarballs in a separate directory with `npm install /absolute/path/to/artifacts/*.tgz`.
+These packages have not been published to npm.
 
 ```sh
-miko hub permissions grant hub.execute
+miko daemon start
+miko daemon status
+miko provider ls
+miko hub login https://your-hub.example
+miko hub connect --help
+miko hub permissions --help
+miko daemon stop
 ```
 
-Miko uses `~/.miko` and port 7767, separate from Paseo's default state and port. Set `MIKO_HOME`
-for another private home. Relay, speech and the built-in web UI are off by default.
+State defaults to `~/.miko`, with `MIKO_HOME` overriding it. The default endpoint is
+`127.0.0.1:7767`. Configure provider credentials using the provider's native authentication
+or explicit provider configuration; Miko never grants task authority during enrollment.
+Grant `hub.execute` separately when intended.
 
-See [backend configuration](docs/miko-backends.md),
-[fork maintenance and source provenance](docs/miko-upstream.md), and the inherited
-[architecture](docs/architecture.md), [testing](docs/testing.md) and [security](SECURITY.md) guides.
+The supported command groups are `daemon`, `provider`, `backend` and `hub`. Workflow
+orchestration, prompts, outputs and completion belong to Hub. Miko includes all inherited
+provider adapters, custom ACP agents and provider profiles. It includes no mobile/desktop/web
+application, voice models, relay, plugin host, browser host, terminal UI, script hosting or resident scheduler.
+The OpenCode adapter's native bridge remains part of provider execution.
 
-The upstream Apache-2.0 license and attribution are retained in [LICENSE](LICENSE).
+- [Execution architecture and scope](docs/architecture.md)
+- [Local and existing Paseo backends](docs/miko-backends.md)
+- [Custom providers and profiles](docs/custom-providers.md)
+- [Upstream synchronization](docs/miko-upstream.md)
+- [Contributing and verification](CONTRIBUTING.md)

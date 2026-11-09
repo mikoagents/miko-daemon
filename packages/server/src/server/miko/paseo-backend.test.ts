@@ -340,3 +340,38 @@ test.each([
   unwatch();
   agents.close();
 });
+
+test("older native catalogs use built-in execution contracts without granting unknown profiles", async () => {
+  const agents = new DaemonAgents((frame) => {
+    const { message } = z
+      .object({ message: z.object({ requestId: z.string() }) })
+      .parse(JSON.parse(frame));
+    agents.receive({
+      type: "session",
+      message: {
+        type: "get_providers_snapshot_response",
+        payload: {
+          requestId: message.requestId,
+          generatedAt: new Date().toISOString(),
+          entries: [
+            { provider: "codex", status: "ready" },
+            { provider: "unknown-profile", status: "ready" },
+            { provider: "advertised-profile", status: "ready", supportsExactMcpPreapproval: true },
+          ],
+        },
+      },
+    });
+  });
+  enable(agents);
+  expect(
+    (await agents.providers({})).entries.map((entry) => [
+      entry.provider,
+      entry.supportsExactMcpPreapproval,
+    ]),
+  ).toEqual([
+    ["codex", true],
+    ["unknown-profile", false],
+    ["advertised-profile", true],
+  ]);
+  agents.close();
+});

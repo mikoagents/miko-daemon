@@ -24,21 +24,22 @@ or regenerate the repository as a source archive.
 
 ## Fork boundary
 
-- Core startup remains CLI → supervisor → worker → bootstrap. Miko's service is attached at
-  the existing Hub socket lifecycle in bootstrap. Local execution attaches an ordinary native
-  session to that daemon's existing server and provider manager.
-- `src/server/miko` owns native Paseo translation, backend configuration, execution references
-  and request receipts. It never answers provider permission requests.
-- Native packages keep their upstream names in source. `scripts/pack-miko.mjs` maps package
-  names and import specifiers in staged release files to `@mikoagents/*`; source packages are
-  private to prevent accidental publication under the upstream namespace.
-- Mobile, desktop and website source remains in history and the tree but is excluded from
-  the daemon workspace install/release. Original deployment workflows are archived outside
-  GitHub's executable workflow directory.
-- Miko defaults to `~/.miko` and port 7767. `MIKO_HOME` selects a separate home;
-  explicit upstream `PASEO_HOME`/config overrides remain available for inherited tooling.
-  Relay, speech, web UI and injected native MCP are off by default. Core terminal, filesystem,
-  process and provider facilities remain available.
+The current distribution contains only the five packages described in [architecture](architecture.md).
+Deleted product source remains in Git history. Keep provider/session/storage/supervision paths and
+symbols stable; adapt provider changes at the narrow bootstrap/execution boundary.
+
+Local execution directly composes the inherited agent manager, request receipts, worktrees and
+recovery services. Existing Paseo services use the native adapter. There is no virtual native
+socket, interactive product session or second process supervisor. Internal package names remain
+private; `pack:miko` maps staged files to `@mikoagents/*`.
+
+The repository intentionally drops all product application, speech, relay, plugin host, browser,
+terminal UI, resident schedule/heartbeat, script proxy and related release/tooling trees. Do not
+resolve an upstream conflict by bringing these trees back. Native schemas remain a compatibility
+boundary for parsing existing services, rather than enabling those products.
+
+Miko defaults to `~/.miko` and port 7767. Development commands use `.dev/miko-home` on port 7768
+without copying credentials or state from an existing Paseo home.
 
 ## Synchronization exercise
 

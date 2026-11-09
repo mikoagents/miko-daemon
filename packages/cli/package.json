@@ -1,7 +1,8 @@
 {
   "name": "@getpaseo/cli",
   "version": "0.8.0-beta.1",
-  "description": "Miko CLI \u2014 self-hosted agent execution for Hub",
+  "private": true,
+  "description": "Miko CLI — self-hosted agent execution for Hub",
   "bin": {
     "miko": "bin/miko"
   },
@@ -20,11 +21,8 @@
     "build:clean": "npm run clean && npm run build",
     "prepack": "npm run build:clean",
     "typecheck": "tsgo --noEmit",
-    "test": "npm run test:unit && npm run test:local",
     "test:unit": "vitest run src",
-    "test:local": "tsx tests/run-all.ts",
-    "test:e2e": "npm run test:local",
-    "test:e2e:lifecycle": "npx tsx tests/e2e/agent-lifecycle.test.ts"
+    "test:lifecycle": "tsx tests/22-daemon-stop-supervisor.test.ts && tsx tests/23-daemon-sigint-supervisor.test.ts && tsx tests/25-daemon-restart-supervisor.test.ts && tsx tests/35-daemon-worker-supervisor-disconnect.test.ts"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.0",
@@ -46,6 +44,5 @@
     "typescript": "^5.2.2",
     "vitest": "^4.1.6",
     "zx": "^8.8.5"
-  },
-  "private": true
+  }
 }

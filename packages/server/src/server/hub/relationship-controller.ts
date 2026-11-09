@@ -11,7 +11,6 @@ import {
   permissionsForLegacyHubScopes,
   type DaemonPermission,
 } from "../authorization/index.js";
-import type { HubExecutionAgents } from "./daemon-executions.js";
 import type {
   HubRelationshipRemote,
   HubSocketConnection,
@@ -174,15 +173,14 @@ export interface HubRelationshipControllerOptions {
       daemonId: string;
       principalId: string;
       permissions: readonly DaemonPermission[];
-      agents: HubExecutionAgents;
       sessionProtocol: "legacy" | "session-v1";
     },
   ) => Promise<void>;
+  retireExecutionAuthority?: () => Promise<void>;
   updateAttachedPermissions: (
     principalId: string,
     permissions: readonly DaemonPermission[],
   ) => void;
-  createExecutionAgents: (daemonId: string) => HubExecutionAgents;
 }
 
 const systemClock: HubRelationshipClock = {
@@ -223,7 +221,6 @@ export class HubRelationshipController implements HubRelationshipManagement {
   private enrollmentGeneration = 0;
   private retryAttempt = 0;
   private readonly inFlightEnrollments = new Set<Promise<void>>();
-  private executionAgents: { daemonId: string; value: HubExecutionAgents } | null = null;
 
   constructor(private readonly options: HubRelationshipControllerOptions) {
     this.filePath = path.join(options.paseoHome, FILE_NAME);
@@ -262,7 +259,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
   }
 
   async stop(): Promise<void> {
-    const pendingExecutionCleanup = this.retireExecutionAgents();
+    const pendingExecutionCleanup = this.options.retireExecutionAuthority?.();
     this.cancelLifecycle();
     this.socket?.close();
     this.socket = null;
@@ -358,7 +355,7 @@ export class HubRelationshipController implements HubRelationshipManagement {
     force: boolean;
   }): Promise<{ status: HubRelationshipStatus; warning?: string }> {
     const waitForEnrollment = this.record?.state === "pending";
-    const pendingCreateCleanup = this.retireExecutionAgents();
+    const pendingCreateCleanup = this.options.retireExecutionAuthority?.();
     this.cancelLifecycle();
     this.socket?.close();
     this.socket = null;
@@ -493,22 +490,8 @@ export class HubRelationshipController implements HubRelationshipManagement {
       daemonId: record.relationship.daemonId,
       principalId: hubPrincipalId(record),
       permissions: record.relationship.permissions,
-      agents: this.executionAgentsFor(record.relationship.daemonId),
       sessionProtocol,
     });
-  }
-
-  private executionAgentsFor(daemonId: string): HubExecutionAgents {
-    if (this.executionAgents?.daemonId === daemonId) return this.executionAgents.value;
-    const value = this.options.createExecutionAgents(daemonId);
-    this.executionAgents = { daemonId, value };
-    return value;
-  }
-
-  private retireExecutionAgents(): Promise<void> {
-    const executionAgents = this.executionAgents;
-    this.executionAgents = null;
-    return executionAgents?.value.invalidateAuthority() ?? Promise.resolve();
   }
 
   private socketRejected(generation: number, statusCode: 401 | 403): void {
@@ -560,7 +543,8 @@ export class HubRelationshipController implements HubRelationshipManagement {
   }
 
   private revoke(reason: string): void {
-    void this.retireExecutionAgents();
+    void this.options.retireExecutionAuthority?.();
+
     this.cancelLifecycle();
     if (!this.record) return;
     const revoked: RevokedRecord = {
@@ -600,7 +584,8 @@ export class HubRelationshipController implements HubRelationshipManagement {
   }
 
   private remove(): void {
-    void this.retireExecutionAgents();
+    void this.options.retireExecutionAuthority?.();
+
     this.cancelLifecycle();
     rmSync(this.filePath, { force: true });
     this.record = null;

@@ -1,0 +1,4 @@
+Miko daemon derives from Paseo (https://github.com/getpaseo/paseo), distributed under the
+Apache License, Version 2.0. Upstream Git history, copyright notices in retained source,
+and the original LICENSE are preserved. The exact source baseline and selectively
+synchronized commits are recorded in MIKO_UPSTREAM.json.

@@ -900,9 +900,10 @@ export function getProviderIds(
   return Object.keys(registry);
 }
 
-// Deprecated: Use buildProviderRegistry instead
-export const PROVIDER_REGISTRY: Record<AgentProvider, ProviderDefinition> =
-  null as unknown as Record<AgentProvider, ProviderDefinition>;
+/** Fallback for older native catalogs that report no explicit execution capability. */
+export function builtinSupportsExactMcpPreapproval(provider: string): boolean {
+  return PROVIDER_CONTRACTS[provider]?.supportsExactMcpPreapproval ?? false;
+}
 
 export function createAllClients(
   logger: Logger,

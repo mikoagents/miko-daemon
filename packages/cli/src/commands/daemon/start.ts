@@ -15,18 +15,11 @@ type RawStartCommandOptions = StartOptions & {
 
 export function startCommand(): Command {
   return new Command("start")
-    .description("Start the local Paseo daemon")
+    .description("Start the local Miko daemon")
     .option("--listen <listen>", "Listen target (host:port, port, or unix socket path)")
-    .option("--port <port>", "Port to listen on (default: 6767)")
+    .option("--port <port>", "Port to listen on (default: 7767)")
     .option("--home <path>", "Miko home directory (default: ~/.miko)")
     .option("--foreground", "Run in foreground (don't daemonize)")
-    .option("--relay", "Enable relay connection")
-    .option("--no-relay", "Disable relay connection")
-    .option("--relay-use-tls", "Use wss:// for the relay connection and pairing offers")
-    .option("--no-mcp", "Disable the Agent MCP HTTP endpoint")
-    .option("--no-inject-mcp", "Disable auto-injecting the Paseo MCP into created agents")
-    .option("--web-ui", "Enable the bundled daemon web UI")
-    .option("--no-web-ui", "Disable the bundled daemon web UI")
     .option(
       "--hostnames <hosts>",
       'Daemon hostnames (comma-separated, e.g. "myhost,.example.com" or "true" for any)',

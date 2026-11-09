@@ -1,18 +1,18 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { createServer } from "node:net";
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 const root = await mkdtemp(join(tmpdir(), "miko-clean-install-"));
-const artifacts = resolve(process.argv[2] ?? "artifacts");
+const artifacts = resolvePath(process.argv[2] ?? "artifacts");
 const env = { ...process.env, MIKO_HOME: join(root, "home"), PASEO_HOME: undefined };
 let started = false;
 try {
   const files = (await readdir(artifacts))
     .filter((file) => file.endsWith(".tgz"))
     .map((file) => join(artifacts, file));
-  assert.equal(files.length, 8);
+  assert.equal(files.length, 5);
   await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", ...files]);
   const cli = join(root, "node_modules/.bin/miko");
   assert.match(await run(cli, ["--help"]), /Usage: miko/);
@@ -22,20 +22,25 @@ try {
   );
   assert.equal(manifest.dependencies["@mikoagents/server"], "0.8.0-miko.1");
   assert.equal(manifest.dependencies["@getpaseo/server"], undefined);
+  assert.match(
+    await readFile(join(root, "node_modules/@mikoagents/server/NOTICE"), "utf8"),
+    /Paseo/,
+  );
   const server = createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert(address && typeof address !== "string");
   await new Promise((resolve) => server.close(resolve));
-  await run(cli, [
-    "daemon",
-    "start",
-    "--listen",
-    `127.0.0.1:${address.port}`,
-    "--no-relay",
-    "--json",
-  ]);
+  await run(cli, ["daemon", "start", "--listen", `127.0.0.1:${address.port}`, "--json"]);
   started = true;
+  const readyDeadline = Date.now() + 30_000;
+  while (true) {
+    try {
+      if ((await fetch(`http://127.0.0.1:${address.port}/healthz`)).ok) break;
+    } catch {}
+    if (Date.now() >= readyDeadline) throw new Error("Installed daemon did not become ready");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   const status = await run(cli, ["daemon", "status", "--json"]);
   assert.match(status, /running/);
   const backends = JSON.parse(await run(cli, ["backend", "ls", "--json"]));
@@ -61,7 +66,17 @@ try {
 }
 function run(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+    const isWindowsCli = process.platform === "win32" && command.endsWith("miko");
+    const executable = isWindowsCli ? process.execPath : command;
+    const commandArgs = isWindowsCli
+      ? [join(root, "node_modules/@mikoagents/cli/dist/index.js"), ...args]
+      : args;
+    const child = spawn(executable, commandArgs, {
+      cwd: root,
+      env,
+      shell: process.platform === "win32" && command === "npm",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "",
       stderr = "";
     child.stdout.on("data", (data) => (stdout += data));

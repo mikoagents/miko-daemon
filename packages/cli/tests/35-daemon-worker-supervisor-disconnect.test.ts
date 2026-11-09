@@ -16,11 +16,6 @@ import { getAvailablePort } from "./helpers/network.ts";
 $.verbose = false;
 
 const pollIntervalMs = 100;
-const testEnv = {
-  PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD: process.env.PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD ?? "0",
-  PASEO_DICTATION_ENABLED: process.env.PASEO_DICTATION_ENABLED ?? "0",
-  PASEO_VOICE_MODE_ENABLED: process.env.PASEO_VOICE_MODE_ENABLED ?? "0",
-};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,15 +84,15 @@ interface DaemonStatus {
 
 async function readDaemonStatus(paseoHome: string): Promise<DaemonStatus> {
   const result =
-    await $`PASEO_HOME=${paseoHome} PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD=${testEnv.PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD} PASEO_DICTATION_ENABLED=${testEnv.PASEO_DICTATION_ENABLED} PASEO_VOICE_MODE_ENABLED=${testEnv.PASEO_VOICE_MODE_ENABLED} npx paseo daemon status --home ${paseoHome} --json`.nothrow();
+    await $`MIKO_HOME=${paseoHome} PASEO_HOME=${paseoHome} node dist/index.js daemon status --home ${paseoHome} --json`.nothrow();
   if (result.exitCode !== 0) {
     return { localDaemon: null, pid: null };
   }
 
   try {
-    const parsed = JSON.parse(result.stdout) as { localDaemon?: unknown; pid?: unknown };
+    const parsed = JSON.parse(result.stdout) as { status?: unknown; pid?: unknown };
     return {
-      localDaemon: typeof parsed.localDaemon === "string" ? parsed.localDaemon : null,
+      localDaemon: typeof parsed.status === "string" ? parsed.status : null,
       pid:
         typeof parsed.pid === "number" && Number.isInteger(parsed.pid) && parsed.pid > 0
           ? parsed.pid
@@ -127,10 +122,10 @@ try {
       cwd: cliRoot,
       env: {
         ...process.env,
-        ...testEnv,
+        MIKO_HOME: paseoHome,
         PASEO_HOME: paseoHome,
+        PASEO_NODE_INSPECT: "--inspect=0",
         PASEO_LISTEN: `127.0.0.1:${port}`,
-        PASEO_RELAY_ENABLED: "false",
         CI: "true",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -181,7 +176,7 @@ try {
     supervisorProcess.kill("SIGKILL");
   }
 
-  await $`PASEO_HOME=${paseoHome} PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD=${testEnv.PASEO_LOCAL_SPEECH_AUTO_DOWNLOAD} PASEO_DICTATION_ENABLED=${testEnv.PASEO_DICTATION_ENABLED} PASEO_VOICE_MODE_ENABLED=${testEnv.PASEO_VOICE_MODE_ENABLED} npx paseo daemon stop --home ${paseoHome} --force`.nothrow();
+  await $`MIKO_HOME=${paseoHome} PASEO_HOME=${paseoHome} node dist/index.js daemon stop --home ${paseoHome} --force`.nothrow();
   await rm(paseoHome, { recursive: true, force: true });
 }
 

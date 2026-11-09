@@ -4,14 +4,10 @@ import { open as openFile, readFile, stat as statFile } from "fs/promises";
 import { TTLCache } from "@isaacs/ttlcache";
 import type { CheckoutCommit, CheckoutCommitFile } from "@getpaseo/protocol/messages";
 import { parseGitHubRemoteIdentity, parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
-import { maxBase64EncryptedPlaintextByteLength } from "@getpaseo/relay";
+
 import type { Logger } from "pino";
 import type { ParsedDiffFile } from "../server/utils/diff-highlighter.js";
-import {
-  highlightDiffWithFileContent,
-  parseAndHighlightDiff,
-  parseDiff,
-} from "../server/utils/diff-highlighter.js";
+import { parseDiff } from "../server/utils/diff-highlighter.js";
 import { parseGitHubRepoFromRemote } from "../server/workspace-git-metadata.js";
 import { createGitHubService } from "../services/github-service.js";
 import type {
@@ -2054,7 +2050,7 @@ const CHECKOUT_DIFF_FRAME_HEADROOM_BYTES = 1024 * 1024;
 // binding: string frames are encrypted and base64-encoded. Reserve 1 MiB plaintext for
 // the surrounding WebSocket JSON envelope after inverting that exact wire expansion.
 export const CHECKOUT_DIFF_MAX_STRUCTURED_BYTES =
-  maxBase64EncryptedPlaintextByteLength(RELAY_MAX_FRAME_BYTES) - CHECKOUT_DIFF_FRAME_HEADROOM_BYTES;
+  RELAY_MAX_FRAME_BYTES - CHECKOUT_DIFF_FRAME_HEADROOM_BYTES;
 
 interface StructuredDiffAccumulator {
   files: ParsedDiffFile[];
@@ -2573,9 +2569,9 @@ export async function getCommitFileDiff({
     return null;
   }
 
-  const parsedFiles = await parseAndHighlightDiff(stdout, cwd, {
-    getOldFileContent: (file) => readGitFileContentAtRef(cwd, `${sha}^`, file.path),
-    getNewFileContent: (file) => readGitFileContentAtRef(cwd, sha, file.path),
+  const parsedFiles = await parsePlainDiff(stdout, cwd, {
+    getOldFileContent: (file: ParsedDiffFile) => readGitFileContentAtRef(cwd, `${sha}^`, file.path),
+    getNewFileContent: (file: ParsedDiffFile) => readGitFileContentAtRef(cwd, sha, file.path),
   });
 
   // `--` scopes the diff to a single pathspec, so there is at most one real
@@ -2985,7 +2981,7 @@ async function buildHighlightedTrackedDiffFile(input: {
     change.isNew ? null : readGitFileContentAtRef(cwd, refsForDiff.baseRef, refPath),
     refsForDiff.targetRef ? readGitFileContentAtRef(cwd, refsForDiff.targetRef, change.path) : null,
   ]);
-  const highlightedFile = await highlightDiffWithFileContent(parsedFile, cwd, {
+  const highlightedFile = await plainDiff(parsedFile, cwd, {
     oldFileContent,
     newFileContent,
   });
@@ -3135,7 +3131,7 @@ async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promi
   }
 
   appendDiff(text);
-  const parsed = await parseAndHighlightDiff(text, cwd);
+  const parsed = await parsePlainDiff(text, cwd);
   const parsedFile =
     parsed[0] ??
     ({
@@ -4076,4 +4072,11 @@ function getUnavailablePullRequestStatus(
     return buildPullRequestStatusResult(null, "authenticated");
   }
   return null;
+}
+
+function plainDiff(file: ParsedDiffFile, ..._options: unknown[]): Promise<ParsedDiffFile> {
+  return Promise.resolve(file);
+}
+function parsePlainDiff(text: string, ..._options: unknown[]): Promise<ParsedDiffFile[]> {
+  return Promise.resolve(parseDiff(text));
 }

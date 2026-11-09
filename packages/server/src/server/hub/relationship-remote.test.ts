@@ -6,7 +6,6 @@ import path from "node:path";
 import pino from "pino";
 import { afterEach, expect, test } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
-import type { HubExecutionAgents } from "./daemon-executions.js";
 import {
   HubRelationshipController,
   type HubRelationshipClock,
@@ -601,14 +600,6 @@ class ManualRelationshipClock implements HubRelationshipClock, HubRelationshipRe
   }
 }
 
-const unusedExecutionAgents: HubExecutionAgents = {
-  create: async () => {
-    throw new Error("Unexpected Hub agent create");
-  },
-  subscribe: () => () => undefined,
-  invalidateAuthority: async () => undefined,
-};
-
 async function connectController(
   hub: UpgradeRejectingHub,
   clock: ManualRelationshipClock,
@@ -626,7 +617,6 @@ async function connectController(
     retryPolicy: clock,
     attachSocket: async () => undefined,
     updateAttachedPermissions: () => undefined,
-    createExecutionAgents: () => unusedExecutionAgents,
   });
   await controller.connect({
     hubUrl: hub.origin,

@@ -13,6 +13,7 @@ import {
 } from "@mikoagents/execution-protocol";
 import { writePrivateFileAtomicSync } from "../private-files.js";
 import type { WebSocketLike } from "../websocket-server.js";
+import type { ExecutionBackend } from "./local-backend.js";
 import { digest, RequestJournal } from "./journal.js";
 import { openBackend, readBackends, type BackendConnection, type Backends } from "./backends.js";
 
@@ -38,6 +39,7 @@ export class ExecutionService {
   private readonly backends = new Map<string, Promise<BackendConnection>>();
   private readonly watchers = new Map<string, () => void>();
   private closed = false;
+  private readonly pending = new Set<Promise<unknown>>();
   private ready = false;
   private readonly directory: string;
   private readonly config: Promise<Backends>;
@@ -47,21 +49,39 @@ export class ExecutionService {
       home: string;
       daemonId: string;
       permissions: readonly string[];
-      attachLocal(socket: WebSocketLike, permissions: readonly string[]): Promise<void>;
+      localBackend?: ExecutionBackend;
     },
   ) {
+    options.localBackend?.setAuthority?.(options.permissions.includes("hub.execute"));
     this.directory = join(options.home, "miko", digest(options.daemonId));
     this.journal = new RequestJournal(join(this.directory, "requests"));
     this.config = readBackends(options.home);
     // Attach the rejection handler before any network message can arrive.
     void this.config.catch(() => options.socket.close(1011, "invalid backend configuration"));
     options.socket.on("message", (data) => {
-      void this.receive(data).catch(() => options.socket.close(4400, "invalid execution request"));
+      const request = this.receive(data);
+      this.pending.add(request);
+      void request
+        .catch(() => options.socket.close(4400, "invalid execution request"))
+        .finally(() => this.pending.delete(request));
     });
     options.socket.on("close", () => this.close());
   }
   updatePermissions(permissions: readonly string[]): void {
     this.options.permissions = permissions;
+    this.options.localBackend?.setAuthority?.(permissions.includes("hub.execute"));
+    if (!permissions.includes("hub.execute")) {
+      for (const unsubscribe of this.watchers.values()) unsubscribe();
+      this.watchers.clear();
+    }
+  }
+  async drain(): Promise<void> {
+    await Promise.allSettled(this.pending);
+  }
+  async retireAuthority(): Promise<void> {
+    this.options.permissions = [];
+    this.options.localBackend?.setAuthority?.(false);
+    await Promise.allSettled(this.pending);
   }
   private send(message: unknown): void {
     if (!this.closed) void this.options.socket.send(JSON.stringify(message));
@@ -115,7 +135,7 @@ export class ExecutionService {
         onClose: () => {
           if (!this.closed) this.options.socket.close(1012, "backend disconnected");
         },
-        attachLocal: (socket) => this.options.attachLocal(socket, this.options.permissions),
+        localBackend: this.options.localBackend,
       });
       this.backends.set(id, connection);
       void connection.catch(() => this.backends.delete(id));
@@ -262,9 +282,10 @@ export class ExecutionService {
           event.type === "agent_stream"
             ? { ...event, agentId }
             : { ...event, agent: this.snapshot(binding, event.agent) };
-        this.send({ type: "miko.event", version, event: translated });
+        if (this.options.permissions.includes("hub.execute"))
+          this.send({ type: "miko.event", version, event: translated });
       });
-      if (this.closed) unsubscribe();
+      if (this.closed || !this.options.permissions.includes("hub.execute")) unsubscribe();
       else this.watchers.set(agentId, unsubscribe);
       return null;
     }

@@ -48,8 +48,6 @@ import {
   type AgentConfigurationValidationInput,
   validateAgentConfigurationAgainstProvider,
 } from "./agent-configuration-validator.js";
-import type { ProviderRegistration } from "@getpaseo/plugin/server/provider";
-import { PluginAgentClientRegistry } from "./plugin-provider.js";
 
 const DEFAULT_REFRESH_TIMEOUT_MS = 120_000;
 const MAX_REFRESH_TIMEOUT_MS = 2_147_483_647;
@@ -253,13 +251,9 @@ export class ProviderSnapshotManager {
   private generation: RegistryGeneration;
   private providerClients: Record<AgentProvider, AgentClient>;
   private readonly ownedClients = new Set<AgentClient>();
-  private readonly pluginProviders: PluginAgentClientRegistry;
 
   constructor(options: ProviderSnapshotManagerOptions) {
     this.logger = options.logger;
-    this.pluginProviders = new PluginAgentClientRegistry(
-      options.logger.child({ module: "plugin-providers" }),
-    );
     this.workspaceGitService = options.workspaceGitService;
     this.managedProcesses = options.managedProcesses;
     this.openCodeBridge = options.openCodeBridge;
@@ -279,7 +273,6 @@ export class ProviderSnapshotManager {
     );
     this.providerClients = {
       ...this.extraClients,
-      ...this.pluginProviders.clients(),
     } as Record<AgentProvider, AgentClient>;
     for (const client of Object.values(this.providerClients)) this.ownedClients.add(client);
   }
@@ -381,41 +374,6 @@ export class ProviderSnapshotManager {
       }
     }
     return { providerDefinitions, clients };
-  }
-
-  replacePluginProviders(
-    registrations: readonly ProviderRegistration[],
-  ): AgentManagerProviderState {
-    for (const registration of registrations) {
-      if (
-        (this.generation.definitions[registration.id] || this.extraClients[registration.id]) &&
-        !this.pluginProviders.has(registration.id)
-      ) {
-        throw new Error(
-          `Plugin provider '${registration.id}' conflicts with a configured provider`,
-        );
-      }
-    }
-    const previousPlugins = this.pluginProviders.definitions();
-    const clients = { ...this.providerClients };
-    // Materialize fallible installed clients before retiring any plugin runtime.
-    this.createAgentManagerState(this.generation.definitions, clients);
-    this.pluginProviders.replace(registrations);
-    const plugins = this.pluginProviders.definitions();
-    const definitions = { ...this.generation.definitions };
-    const changed = new Set<AgentProvider>();
-    for (const provider of new Set([...Object.keys(previousPlugins), ...Object.keys(plugins)])) {
-      if (previousPlugins[provider] !== plugins[provider]) changed.add(provider);
-      delete definitions[provider];
-      delete clients[provider];
-    }
-    Object.assign(definitions, plugins);
-    Object.assign(clients, this.pluginProviders.clients());
-    for (const client of Object.values(clients)) this.ownedClients.add(client);
-    const generation = this.createGeneration(definitions, this.providerOverrides);
-    const state = this.createAgentManagerState(definitions, clients);
-    this.installGeneration(generation, clients, changed);
-    return state;
   }
 
   private ensureClient(
@@ -602,7 +560,7 @@ export class ProviderSnapshotManager {
         definitions[provider] = before;
       }
     }
-    Object.assign(clients, this.extraClients, this.pluginProviders.clients());
+    Object.assign(clients, this.extraClients);
     const generation = this.createGeneration(definitions, providerOverrides);
     const agentManagerState = this.createAgentManagerState(definitions, clients);
     return {
@@ -689,13 +647,6 @@ export class ProviderSnapshotManager {
       openCodeBridge: this.openCodeBridge,
       isDev: this.isDev,
     });
-
-    for (const [provider, definition] of Object.entries(this.pluginProviders.definitions())) {
-      if (registry[provider]) {
-        throw new Error(`Plugin provider '${provider}' conflicts with a configured provider`);
-      }
-      registry[provider] = definition;
-    }
 
     for (const [provider, client] of Object.entries(this.extraClients) as Array<
       [AgentProvider, AgentClient]
@@ -822,9 +773,7 @@ export class ProviderSnapshotManager {
         providerStates.set(provider, previous!);
         continue;
       }
-      const custom =
-        this.pluginProviders.has(provider) ||
-        (!BUILTIN_PROVIDER_IDS.includes(provider) && !!overrides?.[provider]?.extends);
+      const custom = !BUILTIN_PROVIDER_IDS.includes(provider) && !!overrides?.[provider]?.extends;
       providerStates.set(provider, {
         discoveryLimit: previous?.discoveryLimit ?? pLimit({ concurrency: 4, rejectOnClear: true }),
         initial: identifyEntry({
