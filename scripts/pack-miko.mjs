@@ -59,11 +59,15 @@ async function packPackage(name) {
   }
   await writeFile(join(destination, "package.json"), JSON.stringify(manifest, null, 2) + "\n");
   await rewrite(destination);
-  const packed = spawnSync("npm", ["pack", "--ignore-scripts", "--pack-destination", output], {
-    cwd: destination,
-    encoding: "utf8",
-  });
-  if (packed.status !== 0) throw new Error(packed.stderr);
+  // npm.cmd cannot be spawned directly on Windows. npm scripts provide the
+  // JavaScript entrypoint, which Node can run without shell argument expansion.
+  const npmEntry = process.env.npm_execpath;
+  const packed = spawnSync(
+    npmEntry ? process.execPath : "npm",
+    [...(npmEntry ? [npmEntry] : []), "pack", "--ignore-scripts", "--pack-destination", output],
+    { cwd: destination, encoding: "utf8" },
+  );
+  if (packed.status !== 0) throw new Error(packed.error?.message ?? packed.stderr);
   process.stdout.write(packed.stdout);
 }
 async function copyOptionalFiles(source, destination, files) {

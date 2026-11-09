@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix provider version tests on clean CI runners and normalize source line endings across platforms.
+- Make provider and CLI tests portable across clean CI runners, normalize source line endings, and run npm packing through Node on Windows.
 - Trim the fork to provider execution, durable sessions and worktrees, process supervision,
   explicit Hub authorization and local/existing-Paseo adapters.
 - Remove application, speech, relay, plugin host, browser/terminal UI, scripts, resident scheduler,
