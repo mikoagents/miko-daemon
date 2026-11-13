@@ -51,7 +51,7 @@ export function resolveHubInitConnection(
 export function createHubInitScaffold(input: HubInitScaffoldInput): HubInitScaffold {
   const provider = providerScaffold(input.provider, input.providerFilters);
   return {
-    triggerPath: `.paseo/triggers/${input.provider}-help.yml`,
+    triggerPath: `.miko/triggers/${input.provider}-help.yml`,
     trigger: YAML.stringify(
       triggerDocument({
         ...provider,

@@ -49,12 +49,12 @@ describe("Hub trigger export", () => {
 
     assert.deepEqual(requests, [{ origin: "https://hub.test", credential: "stored-secret" }]);
     assert.equal(
-      await readFile(path.join(cwd, ".paseo", "triggers", "slack-help.yml"), "utf8"),
+      await readFile(path.join(cwd, ".miko", "triggers", "slack-help.yml"), "utf8"),
       "name: slack-help\nenabled: true\n",
     );
     assert.deepEqual(result.data, {
       origin: "https://hub.test",
-      directory: path.join(cwd, ".paseo", "triggers"),
+      directory: path.join(cwd, ".miko", "triggers"),
       exported: 1,
       unchanged: 0,
     });
