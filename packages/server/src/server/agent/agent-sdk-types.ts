@@ -443,6 +443,7 @@ export type AgentStreamEvent =
       turnId?: string;
     }
   | { type: "turn_canceled"; provider: AgentProvider; reason: string; turnId?: string }
+  | { type: "background_tasks_changed"; provider: AgentProvider; count: number }
   | {
       type: "timeline";
       item: AgentTimelineItem;

@@ -1682,6 +1682,59 @@ test("reload does not create a replacement when the closed snapshot cannot be pe
   }
 });
 
+test("reports running while provider background work outlives its foreground turn", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-background-work-"));
+  const session = new TestAgentSession({ provider: "codex", cwd: workdir });
+  const client = new (class extends TestAgentClient {
+    override async createSession(): Promise<AgentSession> {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const statuses: string[] = [];
+  const unsubscribe = manager.subscribe(
+    (event) => {
+      if (event.type === "agent_state" && event.agent.id === agent.id) {
+        statuses.push(toAgentPayload(event.agent).status);
+      }
+    },
+    { agentId: agent.id, replayState: false },
+  );
+  try {
+    session.pushEvent({ type: "background_tasks_changed", provider: "codex", count: 1 });
+    await manager.runAgent(agent.id, "Run tests in the background");
+    await manager.flush();
+
+    const current = manager.getAgent(agent.id);
+    if (!current) throw new Error("Agent must remain available after its turn");
+    expect(current.lifecycle).toBe("idle");
+    expect(toAgentPayload(current)).toMatchObject({ status: "running", activeTurn: null });
+    expect(toAgentPayload(current).requiresAttention).toBe(false);
+    expect(statuses).not.toContain("idle");
+
+    session.pushEvent({ type: "background_tasks_changed", provider: "codex", count: 0 });
+    await manager.flush();
+    const finished = manager.getAgent(agent.id);
+    if (!finished) throw new Error("Agent must remain available after its background task");
+    expect(toAgentPayload(finished).status).toBe("idle");
+    expect(statuses.at(-1)).toBe("idle");
+
+    session.pushEvent({ type: "background_tasks_changed", provider: "codex", count: 1 });
+    await manager.flush();
+    await manager.reloadAgentSession(agent.id);
+    const reloaded = manager.getAgent(agent.id);
+    if (!reloaded) throw new Error("Reloaded agent must remain available");
+    expect(toAgentPayload(reloaded).status).toBe("idle");
+  } finally {
+    unsubscribe();
+    await manager.flushForShutdown();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("normalizeConfig injects the provider default model while leaving mode omitted", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");

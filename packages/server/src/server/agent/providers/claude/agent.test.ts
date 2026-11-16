@@ -21,6 +21,7 @@ import type { AgentSession, AgentTimelineItem, AgentStreamEvent } from "../../ag
 
 interface TestClaudeSession {
   translateMessageToEvents(message: SDKMessage): AgentStreamEvent[];
+  subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   close(): Promise<void>;
 }
 
@@ -1759,6 +1760,49 @@ describe("ClaudeAgentSession context window usage", () => {
       model: options?.model,
     });
   }
+
+  test("reports the native background task snapshot independently of foreground turns", async () => {
+    const session = await createSessionForTest();
+    try {
+      const snapshot = (ids: string[]): SDKMessage => ({
+        type: "system",
+        subtype: "background_tasks_changed",
+        tasks: ids.map((id) => ({ task_id: id, task_type: "local_bash", description: "npm test" })),
+        uuid: "background-snapshot",
+        session_id: "session-background",
+      });
+      expect(session.translateMessageToEvents(snapshot(["test-1"]))).toEqual([
+        { type: "background_tasks_changed", provider: "claude", count: 1 },
+      ]);
+      expect(session.translateMessageToEvents(snapshot(["test-2", "test-3"]))).toEqual([
+        { type: "background_tasks_changed", provider: "claude", count: 2 },
+      ]);
+      expect(session.translateMessageToEvents(snapshot([]))).toEqual([
+        { type: "background_tasks_changed", provider: "claude", count: 0 },
+      ]);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("clears background activity when the owning Claude runtime closes", async () => {
+    const session = await createSessionForTest();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    session.translateMessageToEvents({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [{ task_id: "test-1", task_type: "local_bash", description: "npm test" }],
+      uuid: "background-snapshot",
+      session_id: "session-background",
+    });
+    await session.close();
+    expect(events).toContainEqual({
+      type: "background_tasks_changed",
+      provider: "claude",
+      count: 0,
+    });
+  });
 
   test("emits canonical task snapshots from Claude TaskCreate results", async () => {
     const session = await createSessionForTest();

@@ -113,6 +113,17 @@ it("projects the daemon-owned active turn identity", () => {
   });
 });
 
+it("keeps background activity live-only and preserves terminal states", () => {
+  const idle = createManagedAgent({ lifecycle: "idle", backgroundTaskCount: 1 });
+  expect(toAgentPayload(idle).status).toBe("running");
+  expect(toStoredAgentRecord(idle).lastStatus).toBe("idle");
+  for (const lifecycle of ["error", "closed"] as const) {
+    expect(toAgentPayload(createManagedAgent({ lifecycle, backgroundTaskCount: 1 })).status).toBe(
+      lifecycle,
+    );
+  }
+});
+
 function createPermission(overrides: Partial<AgentPermissionRequest> = {}): AgentPermissionRequest {
   const base: AgentPermissionRequest = {
     id: "perm-1",
