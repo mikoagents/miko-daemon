@@ -97,6 +97,12 @@ export function toStoredAgentRecord(
   } satisfies StoredAgentRecord;
 }
 
+export function resolveEffectiveAgentStatus(agent: ManagedAgent): AgentSnapshotPayload["status"] {
+  return agent.lifecycle === "idle" && (agent.backgroundTaskCount ?? 0) > 0
+    ? "running"
+    : agent.lifecycle;
+}
+
 export function toAgentPayload(
   agent: ManagedAgent,
   options?: ProjectionOptions,
@@ -120,7 +126,7 @@ export function toAgentPayload(
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
     lastUserMessageAt: agent.lastUserMessageAt ? agent.lastUserMessageAt.toISOString() : null,
-    status: agent.lifecycle,
+    status: resolveEffectiveAgentStatus(agent),
     activeTurn: agent.activeTurnId
       ? {
           turnId: agent.activeTurnId,

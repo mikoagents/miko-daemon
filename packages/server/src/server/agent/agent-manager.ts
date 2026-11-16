@@ -49,6 +49,7 @@ import {
   type ListImportableSessionsOptions,
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
+import { resolveEffectiveAgentStatus } from "./agent-projections.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
@@ -364,6 +365,8 @@ interface HandleStreamEventOptions {
 
 interface ManagedAgentBase {
   id: string;
+  /** Live provider work that can outlive a foreground turn; never restored from history. */
+  backgroundTaskCount?: number;
   provider: AgentProvider;
   cwd: string;
   /**
@@ -3677,6 +3680,11 @@ export class AgentManager {
     agent: ActiveManagedAgent,
     event: AgentStreamEvent,
   ): Promise<void> {
+    if (event.type === "background_tasks_changed") {
+      agent.backgroundTaskCount = event.count;
+      this.emitState(agent, { persist: false });
+      return;
+    }
     if (event.type === "provider_subagent") {
       const update = this.providerSubagents.apply(agent.id, event.provider, event.event);
       this.dispatch({ type: "provider_subagent", event: update });
@@ -4648,7 +4656,7 @@ export class AgentManager {
 
   private checkAndSetAttention(agent: ManagedAgent): void {
     const previousStatus = this.previousStatuses.get(agent.id);
-    const currentStatus = agent.lifecycle;
+    const currentStatus = resolveEffectiveAgentStatus(agent);
 
     // Track the new status
     this.previousStatuses.set(agent.id, currentStatus);

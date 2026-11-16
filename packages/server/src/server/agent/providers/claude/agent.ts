@@ -2065,6 +2065,7 @@ class ClaudeAgentSession implements AgentSession {
   private toolUseInputBuffers = new Map<string, string>();
   private pendingPermissions = new Map<string, PendingPermission>();
   private activeForegroundTurnId: string | null = null;
+  private backgroundTaskCount = 0;
   private autonomousTurn: AutonomousTurnState | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private readonly timelineAssembler = new TimelineAssembler();
@@ -2676,6 +2677,7 @@ class ClaudeAgentSession implements AgentSession {
       "provider.claude.session_close.start",
     );
     this.closed = true;
+    this.resetBackgroundTasks();
     this.rejectAllPendingPermissions(new Error("Claude session closed"));
     this.cancelCurrentTurn?.();
     this.subscribers.clear();
@@ -3135,6 +3137,7 @@ class ClaudeAgentSession implements AgentSession {
     // Preserve claudeSessionId across query recreation so buildOptions() passes
     // resume: sessionId and the new query continues the existing conversation.
     this.persistence = null;
+    this.resetBackgroundTasks();
 
     const input = createAsyncMessageInput<SDKUserMessage>();
     const options = await this.buildOptions();
@@ -3676,11 +3679,18 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private failRunningRuntimeTasks(): void {
+    this.resetBackgroundTasks();
     this.dispatchEvents(
       foldSubagentObservations(this.taskProtocolSource.failRunningTasks()).map(
         (event): AgentStreamEvent => ({ type: "provider_subagent", provider: "claude", event }),
       ),
     );
+  }
+
+  private resetBackgroundTasks(): void {
+    if (this.backgroundTaskCount === 0) return;
+    this.backgroundTaskCount = 0;
+    this.notifySubscribers({ type: "background_tasks_changed", provider: "claude", count: 0 });
   }
 
   private startQueryPump(): void {
@@ -4238,6 +4248,15 @@ class ClaudeAgentSession implements AgentSession {
     message: Extract<SDKMessage, { type: "system" }>,
     events: AgentStreamEvent[],
   ): void {
+    if (message.subtype === "background_tasks_changed") {
+      this.backgroundTaskCount = message.tasks.length;
+      events.push({
+        type: "background_tasks_changed",
+        provider: "claude",
+        count: this.backgroundTaskCount,
+      });
+      return;
+    }
     if (message.subtype === "init") {
       const sessionUpdate = this.handleSystemMessage(message);
       if (sessionUpdate.notice) {
